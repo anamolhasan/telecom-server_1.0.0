@@ -1,0 +1,8 @@
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+  STAFF
+  USER
+  AGENT
+}
