@@ -1,0 +1,37 @@
+model AppUser {
+    id String @id @default(uuid(7))
+
+    // 🔗 Auth User Relation
+    authUserId String @unique
+    authUser   User   @relation(fields: [authUserId], references: [id])
+
+    // 👤 Extra Profile Info
+    profilePhoto  String?
+    contactNumber String?
+    address       String?
+    country       String?
+
+    // 💰 Agent / Earning System
+    canEarn     Boolean @default(false)
+    balance     Float   @default(0)
+    totalEarned Float   @default(0)
+
+    // 🔗 Referral System
+    referredBy String?
+    referrer   AppUser?  @relation("Referral", fields: [referredBy], references: [id])
+    referrals  AppUser[] @relation("Referral")
+
+    // 📊 Activity
+    lastLogin DateTime?
+
+    // 🗑️ Soft Delete
+    isDeleted Boolean   @default(false)
+    deletedAt DateTime?
+
+    // ⏱️ Timestamps
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([referredBy])
+    @@map("app_user")
+}

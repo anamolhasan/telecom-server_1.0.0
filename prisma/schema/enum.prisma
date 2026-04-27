@@ -6,3 +6,12 @@ enum Role {
   USER
   AGENT
 }
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+  BLOCKED
+  VERIFIED
+}
