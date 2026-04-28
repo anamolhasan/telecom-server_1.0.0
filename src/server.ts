@@ -7,16 +7,16 @@ let server: Server;
 // ─── Graceful Shutdown ───────────────────────────────────────────────────────
 
 const handleShutdown = (signal: string, exitCode: number = 0): void => {
-  console.log(`\n[${signal}] সার্ভার বন্ধ হচ্ছে...`);
+  console.log(`\n[${signal}] Server is shutting down...`);
 
   if (server) {
     server.close(() => {
-      console.log("✅ সার্ভার সফলভাবে বন্ধ হয়েছে।");
+      console.log("✅ Server closed gracefully.");
       process.exit(exitCode);
     });
 
     setTimeout(() => {
-      console.warn("⚠️  সময়সীমা শেষ — সার্ভার জোর করে বন্ধ করা হচ্ছে।");
+      console.warn("⚠️  Timeout reached — forcing server shutdown.");
       process.exit(exitCode);
     }, 10_000).unref();
   } else {
@@ -27,17 +27,17 @@ const handleShutdown = (signal: string, exitCode: number = 0): void => {
 // ─── Signal Handlers ─────────────────────────────────────────────────────────
 
 process.on("SIGTERM", () => handleShutdown("SIGTERM", 0));
-process.on("SIGINT", () => handleShutdown("SIGINT", 0));
+process.on("SIGINT",  () => handleShutdown("SIGINT",  0));
 
 // ─── Error Handlers ──────────────────────────────────────────────────────────
 
 process.on("uncaughtException", (error: Error) => {
-  console.error("💥 Uncaught Exception ধরা পড়েছে:", error);
+  console.error("💥 Uncaught Exception detected:", error);
   handleShutdown("uncaughtException", 1);
 });
 
 process.on("unhandledRejection", (reason: unknown) => {
-  console.error("⚠️  Unhandled Rejection ধরা পড়েছে:", reason);
+  console.error("⚠️  Unhandled Rejection detected:", reason);
   handleShutdown("unhandledRejection", 1);
 });
 
@@ -46,10 +46,10 @@ process.on("unhandledRejection", (reason: unknown) => {
 const bootstrap = async (): Promise<void> => {
   try {
     server = app.listen(envVars.PORT, () => {
-      console.log(`🚀 সার্ভার চলছে: http://localhost:${envVars.PORT}`);
+      console.log(`🚀 Server is running: http://localhost:${envVars.PORT}`);
     });
   } catch (error) {
-    console.error("❌ সার্ভার চালু করতে সমস্যা হয়েছে:", error);
+    console.error("❌ Failed to start server:", error);
     process.exit(1);
   }
 };

@@ -45,11 +45,11 @@ export const auth = betterAuth({
             },
             phone: {
                 type:'string',
-                required:true
+                required:false
             },
             phoneVerified: {
                 type: "boolean",
-                required: true,
+                required: false,
                 defaultValue: false,
             },
         }

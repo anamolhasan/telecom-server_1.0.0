@@ -14,4 +14,10 @@ enum UserStatus {
   SUSPENDED
   BLOCKED
   VERIFIED
+  DELETED
+}
+
+enum Gender {
+  MALE
+  FEMALE
 }
