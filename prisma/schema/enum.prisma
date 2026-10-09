@@ -1,14 +1,16 @@
 enum Role {
   SUPER_ADMIN
   ADMIN
-  SUPPORT
-  STAFF
-  USER
+  MODERATOR
+  SUPPORTER
+  EMPLOYEE
   AGENT
+  USER
 }
 
 enum UserStatus {
   ACTIVE
+  SLEEPING
   INACTIVE
   PENDING
   SUSPENDED
@@ -24,8 +26,8 @@ enum Gender {
 
 enum OrderStatus {
   PENDING
-  PAID
   PROCESSING
+  WORKING
   COMPLETED
   CANCELLED
   FAILED
@@ -54,9 +56,8 @@ enum WalletTransactionType {
 
 enum WalletTransactionReason {
   COMMISSION
-  REFERRAL
   REFERRAL_INCOME
-  TOPUP
+  TOP_UP
   ORDER_PAYMENT
   WITHDRAWAL
   REFUND

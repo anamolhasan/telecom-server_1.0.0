@@ -1,4 +1,13 @@
 -- CreateEnum
+CREATE TYPE "Role" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'MODERATOR', 'SUPPORT', 'STAFF', 'AGENT', 'USER');
+
+-- CreateEnum
+CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'PENDING', 'SUSPENDED', 'BLOCKED', 'VERIFIED', 'DELETED');
+
+-- CreateEnum
+CREATE TYPE "Gender" AS ENUM ('MALE', 'FEMALE');
+
+-- CreateEnum
 CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PAID', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'FAILED');
 
 -- CreateEnum
@@ -22,9 +31,92 @@ CREATE TYPE "WithdrawalStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'PAID
 -- CreateEnum
 CREATE TYPE "WithdrawalMethod" AS ENUM ('BKASH', 'NAGAD', 'ROCKET', 'BANK');
 
+-- CreateTable
+CREATE TABLE "app_user" (
+    "id" TEXT NOT NULL,
+    "authUserId" TEXT NOT NULL,
+    "profilePhoto" TEXT,
+    "contactNumber" TEXT,
+    "address" TEXT,
+    "country" TEXT,
+    "canEarn" BOOLEAN NOT NULL DEFAULT false,
+    "balance" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "totalEarned" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "referralIncomeEligible" BOOLEAN NOT NULL DEFAULT false,
+    "referredBy" TEXT,
+    "lastLogin" TIMESTAMP(3),
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
--- AlterTable
-ALTER TABLE "user" ALTER COLUMN "phone" DROP NOT NULL;
+    CONSTRAINT "app_user_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "user" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "phone" TEXT,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "phoneVerified" BOOLEAN NOT NULL DEFAULT false,
+    "role" "Role" NOT NULL DEFAULT 'USER',
+    "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
+    "needPasswordChange" BOOLEAN NOT NULL DEFAULT false,
+    "image" TEXT,
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "user_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "session" (
+    "id" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "token" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL,
+
+    CONSTRAINT "session_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "account" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" TIMESTAMP(3),
+    "refreshTokenExpiresAt" TIMESTAMP(3),
+    "scope" TEXT,
+    "password" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "account_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "verification" (
+    "id" TEXT NOT NULL,
+    "identifier" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "verification_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "referral_applications" (
@@ -39,6 +131,19 @@ CREATE TABLE "referral_applications" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "referral_applications_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "specialties" (
+    "id" TEXT NOT NULL,
+    "title" VARCHAR(100) NOT NULL,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "specialties_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -149,6 +254,30 @@ CREATE TABLE "withdrawals" (
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "app_user_authUserId_key" ON "app_user"("authUserId");
+
+-- CreateIndex
+CREATE INDEX "app_user_referredBy_idx" ON "app_user"("referredBy");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_phone_key" ON "user"("phone");
+
+-- CreateIndex
+CREATE INDEX "session_userId_idx" ON "session"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "session_token_key" ON "session"("token");
+
+-- CreateIndex
+CREATE INDEX "account_userId_idx" ON "account"("userId");
+
+-- CreateIndex
+CREATE INDEX "verification_identifier_idx" ON "verification"("identifier");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "referral_applications_appUserId_key" ON "referral_applications"("appUserId");
 
 -- CreateIndex
@@ -156,6 +285,15 @@ CREATE INDEX "idx_referral_application_status" ON "referral_applications"("statu
 
 -- CreateIndex
 CREATE INDEX "idx_referral_application_reviewedById" ON "referral_applications"("reviewedById");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "specialties_title_key" ON "specialties"("title");
+
+-- CreateIndex
+CREATE INDEX "idx_specialty_isDeleted" ON "specialties"("isDeleted");
+
+-- CreateIndex
+CREATE INDEX "idx_specialty_title" ON "specialties"("title");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "operators_name_key" ON "operators"("name");
@@ -210,6 +348,18 @@ CREATE INDEX "idx_withdrawal_userId" ON "withdrawals"("userId");
 
 -- CreateIndex
 CREATE INDEX "idx_withdrawal_status" ON "withdrawals"("status");
+
+-- AddForeignKey
+ALTER TABLE "app_user" ADD CONSTRAINT "app_user_authUserId_fkey" FOREIGN KEY ("authUserId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "app_user" ADD CONSTRAINT "app_user_referredBy_fkey" FOREIGN KEY ("referredBy") REFERENCES "app_user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "session" ADD CONSTRAINT "session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "account" ADD CONSTRAINT "account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "referral_applications" ADD CONSTRAINT "referral_applications_appUserId_fkey" FOREIGN KEY ("appUserId") REFERENCES "app_user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
