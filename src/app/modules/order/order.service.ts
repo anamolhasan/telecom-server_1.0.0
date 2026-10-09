@@ -15,9 +15,9 @@ import { ICreateOrderPayload } from "./order.interface";
 
 
 const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.PENDING]: [OrderStatus.PAID, OrderStatus.CANCELLED, OrderStatus.FAILED],
-    [OrderStatus.PAID]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED, OrderStatus.FAILED],
-    [OrderStatus.PROCESSING]: [OrderStatus.COMPLETED, OrderStatus.FAILED],
+    [OrderStatus.PENDING]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED, OrderStatus.FAILED],
+    [OrderStatus.PROCESSING]: [OrderStatus.WORKING, OrderStatus.CANCELLED, OrderStatus.FAILED],
+    [OrderStatus.WORKING]: [OrderStatus.COMPLETED, OrderStatus.FAILED],
     [OrderStatus.COMPLETED]: [],
     [OrderStatus.CANCELLED]: [],
     [OrderStatus.FAILED]: [],
@@ -194,7 +194,6 @@ const changeOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
             where: { id: orderId },
             data: {
                 status: nextStatus,
-                ...(nextStatus === OrderStatus.PAID ? { paymentStatus: PaymentStatus.PAID } : {}),
                 ...(nextStatus === OrderStatus.COMPLETED && order.completedAt === null
                     ? { completedAt: new Date() }
                     : {}),

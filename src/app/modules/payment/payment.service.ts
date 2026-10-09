@@ -79,7 +79,7 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
 
         await tx.order.update({
             where: { id: orderId },
-            data: { status: OrderStatus.PAID, paymentStatus: PaymentStatus.PAID },
+            data: { status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID },
         });
 
         const appUser = order.user.appUser;
@@ -114,7 +114,7 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
                         userId: referrer.authUserId,
                         amount: REFERRAL_REWARD_AMOUNT,
                         type: WalletTransactionType.CREDIT,
-                        reason: WalletTransactionReason.REFERRAL,
+                        reason: WalletTransactionReason.REFERRAL_INCOME,
                         description: `Referral reward from user ${order.userId}`,
                     });
                 }
