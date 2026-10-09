@@ -10,6 +10,7 @@ import { IQueryParams, PrismaModelDelegate } from "../../interfaces/query.interf
 import { IRequestUser } from "../../interfaces/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { QueryBuilder } from "../../utils/QueryBuilder";
+import { ReferralService } from "../referral/referral.service";
 import { ICreateOrderPayload } from "./order.interface";
 
 
@@ -188,12 +189,29 @@ const changeOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
         );
     }
 
-    return prisma.order.update({
-        where: { id: orderId },
-        data: {
-            status: nextStatus,
-            ...(nextStatus === OrderStatus.PAID ? { paymentStatus: PaymentStatus.PAID } : {}),
-        },
+    return prisma.$transaction(async (tx) => {
+        const updated = await tx.order.update({
+            where: { id: orderId },
+            data: {
+                status: nextStatus,
+                ...(nextStatus === OrderStatus.PAID ? { paymentStatus: PaymentStatus.PAID } : {}),
+                ...(nextStatus === OrderStatus.COMPLETED && order.completedAt === null
+                    ? { completedAt: new Date() }
+                    : {}),
+            },
+        });
+
+        // Recapture referrer eligibility whenever an order's qualification status changes
+        // (completion makes a referred account active; cancellation/failure removes it).
+        if (
+            nextStatus === OrderStatus.COMPLETED ||
+            nextStatus === OrderStatus.CANCELLED ||
+            nextStatus === OrderStatus.FAILED
+        ) {
+            await ReferralService.recalculateReferrerEligibilityForOrder(orderId, tx);
+        }
+
+        return updated;
     });
 };
 

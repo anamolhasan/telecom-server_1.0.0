@@ -16,10 +16,16 @@ model AppUser {
     balance     Float   @default(0)
     totalEarned Float   @default(0)
 
+    // 🔄 Referral Income derived cache (recomputed server-side; never trusted for money decisions)
+    referralIncomeEligible Boolean @default(false)
+
     // 🔗 Referral System
     referredBy String?
     referrer   AppUser?  @relation("Referral", fields: [referredBy], references: [id])
     referrals  AppUser[] @relation("Referral")
+
+    // 💳 Referral Income program (one application per user)
+    referralApplication ReferralApplication?
 
     // 📊 Activity
     lastLogin DateTime?

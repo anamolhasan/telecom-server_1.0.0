@@ -27,6 +27,7 @@ model User {
     walletTransactions   WalletTransaction[]
     withdrawals          Withdrawal[] @relation("WithdrawalUser")
     processedWithdrawals Withdrawal[] @relation("WithdrawalProcessedBy")
+    reviewedReferralApplications ReferralApplication[] @relation("ReferralApplicationReviewer")
 
     @@map("user")
 }

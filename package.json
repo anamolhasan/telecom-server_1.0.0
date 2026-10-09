@@ -14,7 +14,7 @@
     "push": "prisma db push",
     "pull": "prisma db pull",
     "stripe:webhook": "stripe listen --forward-to localhost:5000/webhook",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [
     "gp",
@@ -52,6 +52,7 @@
     "prisma": "^7.8.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.0"
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^5.0.3"
   }
 }

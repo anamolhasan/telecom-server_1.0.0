@@ -1,6 +1,7 @@
 import { Server } from "http";
 import app from "./app";
 import { envVars } from "./app/config/env";
+import { startReferralEligibilityScheduler } from "./app/modules/referral/referral.scheduler";
 import { seedSuperAdmin } from "./app/utils/seed";
 
 let server: Server;
@@ -47,6 +48,7 @@ process.on("unhandledRejection", (reason: unknown) => {
 const bootstrap = async (): Promise<void> => {
   try {
     await seedSuperAdmin()
+    startReferralEligibilityScheduler()
     server = app.listen(envVars.PORT, () => {
       console.log(`🚀 Server is running: http://localhost:${envVars.PORT}`);
     });

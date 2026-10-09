@@ -55,11 +55,18 @@ enum WalletTransactionType {
 enum WalletTransactionReason {
   COMMISSION
   REFERRAL
+  REFERRAL_INCOME
   TOPUP
   ORDER_PAYMENT
   WITHDRAWAL
   REFUND
   ADJUSTMENT
+}
+
+enum ReferralApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum WithdrawalStatus {

@@ -17,6 +17,7 @@ interface IApplyWalletTransaction {
 const EARNING_REASONS: WalletTransactionReason[] = [
     WalletTransactionReason.COMMISSION,
     WalletTransactionReason.REFERRAL,
+    WalletTransactionReason.REFERRAL_INCOME,
 ];
 
 export const applyWalletTransaction = async (

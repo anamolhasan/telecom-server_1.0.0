@@ -54,6 +54,9 @@ model Order {
     targetNumber    String?
     note            String?       @db.Text
 
+    // Successful order-completion timestamp (null until status becomes COMPLETED)
+    completedAt     DateTime?
+
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
@@ -63,6 +66,7 @@ model Order {
     @@index([userId], name: "idx_order_userId")
     @@index([productId], name: "idx_order_productId")
     @@index([status], name: "idx_order_status")
+    @@index([status, completedAt], name: "idx_order_status_completedAt")
     @@map("orders")
 }
 
