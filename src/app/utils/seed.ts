@@ -1,57 +1,120 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import status from "http-status";
+import { Prisma } from "../../generated/prisma/client";
 import { Role } from "../../generated/prisma/enums";
 import { envVars } from "../config/env";
+import AppError from "../errorHelpers/AppError";
 import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 
+interface ISuperAdminSeedConfig {
+    name: string;
+    email: string;
+    password: string;
+}
 
-export const seedSuperAdmin = async () => {
-    try {
-        const isSuperAdminExist = await prisma.user.findFirst({
-            where: {
-                role: Role.SUPER_ADMIN
-            }
-        })
+const defaultSeedConfig = (): ISuperAdminSeedConfig => ({
+    name: envVars.SUPER_ADMIN_NAME,
+    email: envVars.SUPER_ADMIN_EMAIL,
+    password: envVars.SUPER_ADMIN_PASSWORD,
+});
 
-        if (isSuperAdminExist) {
+export const seedSuperAdmin = async (
+    config: ISuperAdminSeedConfig = defaultSeedConfig(),
+    client: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient,
+): Promise<void> => {
+    const { name, email, password } = config;
+
+    if (!name?.trim() || !email?.trim() || !password?.trim()) {
+        throw new AppError(
+            status.INTERNAL_SERVER_ERROR,
+            "Super admin seed configuration is incomplete. Set SUPER_ADMIN_NAME, SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD before seeding.",
+        );
+    }
+
+    const existing = await client.user.findUnique({
+        where: { email },
+        select: { id: true, role: true },
+    });
+
+    if (existing) {
+        if (existing.role === Role.SUPER_ADMIN) {
             console.log('Super admin already exists. Skipping seeding super admin.');
             return;
         }
-
-        const superAdminUser = await auth.api.signUpEmail({
-            body: {
-                email: envVars.SUPER_ADMIN_EMAIL,
-                password: envVars.SUPER_ADMIN_PASSWORD,
-                name: 'Super Admin',
-                role: Role.SUPER_ADMIN,
-                needPasswordChange: false,
-                rememberMe: false,
-            }
-        })
-
-        await prisma.$transaction(async (tx) => {
-            await tx.user.update({
-                where: {
-                    id: superAdminUser.user.id
-                },
-                data: {
-                    emailVerified: true
-                }
-            })
-
-            await tx.appUser.create({
-                data: {
-                    authUserId: superAdminUser.user.id
-                }
-            })
-        })
-
-        console.log('Super admin created successfully');
-    } catch (error) {
-        console.log('Error seeding super admin:', error);
-        await prisma.user.delete({
-            where: {
-                email: envVars.SUPER_ADMIN_EMAIL
-            }
-        })
+        console.warn(
+            `Super admin seed skipped: an account for SUPER_ADMIN_EMAIL already exists with role ${existing.role}. No role was changed.`,
+        );
+        return;
     }
+
+    const anySuperAdmin = await client.user.findFirst({
+        where: { role: Role.SUPER_ADMIN },
+        select: { id: true },
+    });
+
+    if (anySuperAdmin) {
+        console.warn(
+            "Super admin seed skipped: a SUPER_ADMIN already exists with a different email. Grant additional super admin accounts manually.",
+        );
+        return;
+    }
+
+    const created = await auth.api.signUpEmail({
+        body: {
+            email,
+            password,
+            name,
+            role: Role.SUPER_ADMIN,
+            needPasswordChange: false,
+            rememberMe: false,
+        },
+    });
+
+    const createdUserId = created?.user?.id;
+    if (!createdUserId) {
+        throw new AppError(status.BAD_REQUEST, "Failed to create super admin account.");
+    }
+
+    try {
+        await client.user.update({
+            where: { id: createdUserId },
+            data: { emailVerified: true },
+        });
+        await client.appUser.create({
+            data: { authUserId: createdUserId },
+        });
+        console.log('Super admin created successfully.');
+    } catch (error) {
+        await client.user.delete({ where: { id: createdUserId } }).catch(() => undefined);
+        throw error;
+    }
+};
+
+const isMainModule = (): boolean => {
+    if (process.env.VITEST === "true") {
+        return false;
+    }
+    const entry = process.argv[1];
+    if (!entry) {
+        return false;
+    }
+    const resolvedEntry = path.resolve(entry);
+    if (!resolvedEntry.endsWith("seed.ts")) {
+        return false;
+    }
+    return import.meta.url === pathToFileURL(resolvedEntry).href;
+};
+
+if (isMainModule()) {
+    seedSuperAdmin()
+        .then(() => process.exit(0))
+        .catch((error: unknown) => {
+            console.error(
+                "Failed to seed super admin:",
+                error instanceof Error ? error.message : error,
+            );
+            process.exit(1);
+        });
 }

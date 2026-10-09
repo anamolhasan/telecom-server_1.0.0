@@ -13,6 +13,7 @@
     "studio": "prisma studio",
     "push": "prisma db push",
     "pull": "prisma db pull",
+    "seed": "tsx src/app/utils/seed.ts",
     "stripe:webhook": "stripe listen --forward-to localhost:5000/webhook",
     "test": "vitest run"
   },
