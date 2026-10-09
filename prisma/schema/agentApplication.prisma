@@ -1,0 +1,26 @@
+model AgentApplication {
+    id              String               @id @default(uuid(7))
+
+    // One application per user is enforced by the unique index on appUserId.
+    appUserId       String               @unique
+    appUser         AppUser              @relation(fields: [appUserId], references: [id])
+
+    status          AgentApplicationStatus @default(PENDING)
+
+    // Why the user wants to become an AGENT (optional, free text).
+    reason          String?              @db.Text
+
+    // Review bookkeeping
+    reviewedById    String?
+    reviewedBy      User?                @relation("AgentApplicationReviewer", fields: [reviewedById], references: [id])
+    reviewedAt      DateTime?
+    rejectionReason String?              @db.Text
+
+    appliedAt       DateTime             @default(now())
+    createdAt       DateTime             @default(now())
+    updatedAt       DateTime             @updatedAt
+
+    @@index([status], name: "idx_agent_application_status")
+    @@index([reviewedById], name: "idx_agent_application_reviewedById")
+    @@map("agent_applications")
+}

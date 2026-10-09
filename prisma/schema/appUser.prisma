@@ -27,6 +27,9 @@ model AppUser {
     // 💳 Referral Income program (one application per user)
     referralApplication ReferralApplication?
 
+    // 🤝 Agent program (one application per user)
+    agentApplication AgentApplication?
+
     // 📊 Activity
     lastLogin DateTime?
 

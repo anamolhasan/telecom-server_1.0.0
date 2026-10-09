@@ -70,6 +70,12 @@ enum ReferralApplicationStatus {
   REJECTED
 }
 
+enum AgentApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum WithdrawalStatus {
   PENDING
   APPROVED
