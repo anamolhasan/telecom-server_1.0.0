@@ -2,7 +2,7 @@ model User {
     id    String @id
     name  String
     email String @unique
-    phone String @unique
+    phone String? @unique
 
     emailVerified Boolean @default(false)
     phoneVerified Boolean @default(false)
@@ -21,6 +21,12 @@ model User {
     sessions Session[]
     accounts Account[]
     appUser  AppUser?
+
+    orders               Order[]
+    payments             Payment[]
+    walletTransactions   WalletTransaction[]
+    withdrawals          Withdrawal[] @relation("WithdrawalUser")
+    processedWithdrawals Withdrawal[] @relation("WithdrawalProcessedBy")
 
     @@map("user")
 }

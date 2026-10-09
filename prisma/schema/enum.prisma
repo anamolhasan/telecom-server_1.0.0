@@ -21,3 +21,57 @@ enum Gender {
   MALE
   FEMALE
 }
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum ProductType {
+  RECHARGE
+  BUNDLE
+  MINUTE
+  INTERNET
+  OTHER
+}
+
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum WalletTransactionReason {
+  COMMISSION
+  REFERRAL
+  TOPUP
+  ORDER_PAYMENT
+  WITHDRAWAL
+  REFUND
+  ADJUSTMENT
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum WithdrawalMethod {
+  BKASH
+  NAGAD
+  ROCKET
+  BANK
+}

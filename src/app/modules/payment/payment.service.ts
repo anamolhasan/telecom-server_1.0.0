@@ -1,0 +1,155 @@
+import status from "http-status";
+import Stripe from "stripe";
+import { Prisma } from "../../../generated/prisma/client";
+import {
+    OrderStatus,
+    PaymentStatus,
+    WalletTransactionReason,
+    WalletTransactionType,
+} from "../../../generated/prisma/enums";
+import { REFERRAL_REWARD_AMOUNT } from "../../constants/telecom.constant";
+import AppError from "../../errorHelpers/AppError";
+import { prisma } from "../../lib/prisma";
+import { applyWalletTransaction } from "../wallet/wallet.utils";
+
+
+const markPaymentFailed = async (event: Stripe.Event, session: Stripe.Checkout.Session) => {
+    const paymentId = session.metadata?.paymentId;
+
+    if (!paymentId) {
+        return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.findFirst({ where: { id: paymentId } });
+
+        if (!payment || payment.status === PaymentStatus.PAID) {
+            return;
+        }
+
+        await tx.payment.update({
+            where: { id: paymentId },
+            data: { status: PaymentStatus.FAILED, stripeEventId: event.id },
+        });
+
+        await tx.order.update({
+            where: { id: payment.orderId },
+            data: { status: OrderStatus.FAILED, paymentStatus: PaymentStatus.FAILED },
+        });
+    });
+};
+
+const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Checkout.Session) => {
+    const orderId = session.metadata?.orderId;
+    const paymentId = session.metadata?.paymentId;
+
+    if (!orderId || !paymentId) {
+        throw new AppError(status.BAD_REQUEST, "Missing order/payment metadata in Stripe session");
+    }
+
+    await prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.findFirst({ where: { id: paymentId } });
+
+        if (!payment) {
+            throw new AppError(status.NOT_FOUND, "Payment not found");
+        }
+
+        if (payment.status === PaymentStatus.PAID) {
+            return;
+        }
+
+        const order = await tx.order.findUnique({
+            where: { id: orderId },
+            include: { user: { include: { appUser: true } } },
+        });
+
+        if (!order) {
+            throw new AppError(status.NOT_FOUND, "Order not found");
+        }
+
+        await tx.payment.update({
+            where: { id: paymentId },
+            data: {
+                status: PaymentStatus.PAID,
+                stripeEventId: event.id,
+                paidAt: new Date(),
+                paymentGatewayData: JSON.parse(JSON.stringify(session)) as Prisma.InputJsonValue,
+            },
+        });
+
+        await tx.order.update({
+            where: { id: orderId },
+            data: { status: OrderStatus.PAID, paymentStatus: PaymentStatus.PAID },
+        });
+
+        const appUser = order.user.appUser;
+
+        if (appUser?.canEarn && order.commissionAmount > 0) {
+            await applyWalletTransaction(tx, {
+                userId: order.userId,
+                amount: order.commissionAmount,
+                type: WalletTransactionType.CREDIT,
+                reason: WalletTransactionReason.COMMISSION,
+                description: `Commission for order ${order.id}`,
+                orderId: order.id,
+            });
+        }
+
+        if (appUser?.referredBy) {
+            const previousPaidOrders = await tx.order.count({
+                where: {
+                    userId: order.userId,
+                    paymentStatus: PaymentStatus.PAID,
+                    id: { not: order.id },
+                },
+            });
+
+            if (previousPaidOrders === 0) {
+                const referrer = await tx.appUser.findUnique({
+                    where: { id: appUser.referredBy },
+                });
+
+                if (referrer) {
+                    await applyWalletTransaction(tx, {
+                        userId: referrer.authUserId,
+                        amount: REFERRAL_REWARD_AMOUNT,
+                        type: WalletTransactionType.CREDIT,
+                        reason: WalletTransactionReason.REFERRAL,
+                        description: `Referral reward from user ${order.userId}`,
+                    });
+                }
+            }
+        }
+    });
+
+    return { message: "Payment completed successfully" };
+};
+
+const handleStripeWebhookEvent = async (event: Stripe.Event) => {
+    const processedEvent = await prisma.payment.findFirst({
+        where: { stripeEventId: event.id },
+    });
+
+    if (processedEvent) {
+        return { message: "Event already processed" };
+    }
+
+    switch (event.type) {
+        case "checkout.session.completed": {
+            const session = event.data.object as Stripe.Checkout.Session;
+            return handleCheckoutCompleted(event, session);
+        }
+        case "checkout.session.expired":
+        case "checkout.session.async_payment_failed": {
+            const session = event.data.object as Stripe.Checkout.Session;
+            await markPaymentFailed(event, session);
+            return { message: `Handled ${event.type}` };
+        }
+        default:
+            return { message: `Unhandled event type: ${event.type}` };
+    }
+};
+
+export const PaymentService = {
+    handleStripeWebhookEvent,
+};

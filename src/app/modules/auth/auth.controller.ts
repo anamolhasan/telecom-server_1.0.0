@@ -3,45 +3,75 @@ import { catchAsync } from "../../shared/catchAsync";
 import { AuthService } from "./auth.service";
 import status from "http-status";
 import { sendResponse } from "../../shared/sendResponse";
+import { tokenUtils } from "../../utils/token";
 
 const registerAppUser = catchAsync(async (req: Request, res: Response) => {
   const payload = req.body;
 
   const result = await AuthService.registerUser(payload);
 
-  const { token, ...rest } = result;
+  const { accessToken, refreshToken, token, ...rest } = result;
+
+  tokenUtils.setAccessTokenCookie(res, accessToken);
+  tokenUtils.setRefreshTokenCookie(res, refreshToken);
+  tokenUtils.setBatterAuthSessionCookie(res, token as string);
 
   sendResponse(res, {
     httpStatusCode: status.CREATED,
     success: true,
-    message: "Patient registered successfully",
+    message: "User registered successfully",
     data: {
       token,
+      accessToken,
+      refreshToken,
       ...rest,
     },
   });
 });
 
 
-const loginUser = catchAsync (
-    async (req:Request, res:Response) => {
-        const payload = req.body;
-        const result = await AuthService.loginUser(payload);
+const loginUser = catchAsync(
+  async (req: Request, res: Response) => {
+    const payload = req.body;
+    const result = await AuthService.loginUser(payload);
 
-        const {token, ...rest} = result
+    const { accessToken, refreshToken, token, ...rest } = result
 
-        sendResponse(res, {
-        httpStatusCode:status.OK,
-        success:true,
-        message:'User logged in successfully',
-        data:{
-            token,
-            ...rest,
-        },
-       })
-    }
+    tokenUtils.setAccessTokenCookie(res, accessToken);
+    tokenUtils.setRefreshTokenCookie(res, refreshToken);
+    tokenUtils.setBatterAuthSessionCookie(res, token as string);
+
+    sendResponse(res, {
+      httpStatusCode: status.OK,
+      success: true,
+      message: 'User logged in successfully',
+      data: {
+        token,
+        accessToken,
+        refreshToken,
+        ...rest,
+      },
+    })
+  }
+)
+
+const getMe = catchAsync(
+  async (req: Request, res: Response) => {
+    const user = req.user;
+
+    const result = await AuthService.getMe(user)
+
+    sendResponse(res, {
+      httpStatusCode: status.OK,
+      success: true,
+      message: 'User profile fetched successfully',
+      data: result
+    })
+  }
 )
 
 export const authController = {
-    registerAppUser,
+  registerAppUser,
+  loginUser,
+  getMe,
 }

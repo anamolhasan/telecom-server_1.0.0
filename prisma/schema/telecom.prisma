@@ -1,0 +1,137 @@
+model Operator {
+    id        String   @id @default(uuid(7))
+    name      String   @unique @db.VarChar(100)
+    code      String   @unique @db.VarChar(20)
+    logo      String?
+    isActive  Boolean  @default(true)
+    isDeleted Boolean  @default(false)
+    deletedAt DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    products Product[]
+
+    @@index([isDeleted], name: "idx_operator_isDeleted")
+    @@map("operators")
+}
+
+model Product {
+    id          String      @id @default(uuid(7))
+    operatorId  String
+    operator    Operator    @relation(fields: [operatorId], references: [id])
+    name        String      @db.VarChar(150)
+    description String?     @db.Text
+    type        ProductType @default(RECHARGE)
+    price       Float
+    commissionRate Float    @default(0)
+    isActive    Boolean     @default(true)
+    isDeleted   Boolean     @default(false)
+    deletedAt   DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    orders Order[]
+
+    @@index([operatorId], name: "idx_product_operatorId")
+    @@index([isDeleted], name: "idx_product_isDeleted")
+    @@map("products")
+}
+
+model Order {
+    id              String        @id @default(uuid(7))
+    userId          String
+    user            User          @relation(fields: [userId], references: [id])
+    productId       String
+    product         Product       @relation(fields: [productId], references: [id])
+    quantity        Int           @default(1)
+    unitPrice       Float
+    totalAmount     Float
+    commissionAmount Float        @default(0)
+    status          OrderStatus   @default(PENDING)
+    paymentStatus   PaymentStatus @default(PENDING)
+    targetNumber    String?
+    note            String?       @db.Text
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    payment            Payment?
+    walletTransactions WalletTransaction[]
+
+    @@index([userId], name: "idx_order_userId")
+    @@index([productId], name: "idx_order_productId")
+    @@index([status], name: "idx_order_status")
+    @@map("orders")
+}
+
+model Payment {
+    id               String        @id @default(uuid(7))
+    orderId          String        @unique
+    order            Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+    userId           String
+    user             User          @relation(fields: [userId], references: [id])
+    amount           Float
+    currency         String        @default("bdt")
+    method           String        @default("stripe")
+    status           PaymentStatus @default(PENDING)
+    stripeEventId    String?       @unique
+    stripeSessionId  String?
+    transactionId    String?
+    paymentGatewayData Json?
+    paidAt           DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([userId], name: "idx_payment_userId")
+    @@index([status], name: "idx_payment_status")
+    @@map("payments")
+}
+
+model WalletTransaction {
+    id           String                  @id @default(uuid(7))
+    userId       String
+    user         User                    @relation(fields: [userId], references: [id])
+    type         WalletTransactionType
+    reason       WalletTransactionReason
+    amount       Float
+    balanceAfter Float
+    description  String?                 @db.Text
+    orderId      String?
+    order        Order?                  @relation(fields: [orderId], references: [id])
+    withdrawalId String?
+    withdrawal   Withdrawal?             @relation(fields: [withdrawalId], references: [id])
+
+    createdAt DateTime @default(now())
+
+    @@index([userId], name: "idx_wallet_tx_userId")
+    @@index([orderId], name: "idx_wallet_tx_orderId")
+    @@index([withdrawalId], name: "idx_wallet_tx_withdrawalId")
+    @@map("wallet_transactions")
+}
+
+model Withdrawal {
+    id            String           @id @default(uuid(7))
+    userId        String
+    user          User             @relation("WithdrawalUser", fields: [userId], references: [id])
+    amount        Float
+    method        WithdrawalMethod
+    accountNumber String
+    accountName   String?
+    status        WithdrawalStatus @default(PENDING)
+    adminNote     String?          @db.Text
+    processedById String?
+    processedBy   User?            @relation("WithdrawalProcessedBy", fields: [processedById], references: [id])
+    processedAt   DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    walletTransactions WalletTransaction[]
+
+    @@index([userId], name: "idx_withdrawal_userId")
+    @@index([status], name: "idx_withdrawal_status")
+    @@map("withdrawals")
+}

@@ -13,7 +13,7 @@ export const auth = betterAuth({
    // ─── Email & Password ────────────────────────────────────────────────────
     emailAndPassword: {
         enabled: true,
-        requireEmailVerification: true,
+        requireEmailVerification: false,
     },
       // ─── Additional User Fields ──────────────────────────────────────────────
     user:{
