@@ -1,32 +1,32 @@
 import { Router } from "express";
-import { Role } from "../../../generated/prisma/enums";
 import { checkAuth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { WithdrawalController } from "./withdrawal.controller";
 import { WithdrawalValidation } from "./withdrawal.validation";
+import { CUSTOMER_ROLES, FINANCE_ROLES, WITHDRAWAL_STAFF_ROLES } from "../../constants/rbac.constant";
 
 
 const router = Router();
 
 router.post(
     "/",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     validateRequest(WithdrawalValidation.createWithdrawalZodSchema),
     WithdrawalController.requestWithdrawal,
 );
 router.get(
     "/my",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     WithdrawalController.getMyWithdrawals,
 );
 router.get(
     "/",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN, Role.SUPPORT, Role.STAFF),
+    checkAuth(...WITHDRAWAL_STAFF_ROLES),
     WithdrawalController.getAllWithdrawals,
 );
 router.patch(
     "/:id/status",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...FINANCE_ROLES),
     validateRequest(WithdrawalValidation.updateWithdrawalStatusZodSchema),
     WithdrawalController.updateWithdrawalStatus,
 );

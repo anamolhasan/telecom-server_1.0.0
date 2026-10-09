@@ -1,16 +1,16 @@
 import { Router } from "express";
-import { Role } from "../../../generated/prisma/enums";
 import { checkAuth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { ProductController } from "./product.controller";
 import { ProductValidation } from "./product.validation";
+import { CONTENT_ADMIN_ROLES } from "../../constants/rbac.constant";
 
 
 const router = Router();
 
 router.post(
     "/",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     validateRequest(ProductValidation.createProductZodSchema),
     ProductController.createProduct,
 );
@@ -18,13 +18,13 @@ router.get("/", ProductController.getAllProducts);
 router.get("/:id", ProductController.getProductById);
 router.patch(
     "/:id",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     validateRequest(ProductValidation.updateProductZodSchema),
     ProductController.updateProduct,
 );
 router.delete(
     "/:id",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     ProductController.deleteProduct,
 );
 

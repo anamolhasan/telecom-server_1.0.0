@@ -1,42 +1,42 @@
 import { Router } from "express";
-import { Role } from "../../../generated/prisma/enums";
 import { checkAuth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { OrderController } from "./order.controller";
 import { OrderValidation } from "./order.validation";
+import { CUSTOMER_ROLES, ORDER_STAFF_ROLES } from "../../constants/rbac.constant";
 
 
 const router = Router();
 
 router.post(
     "/",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     validateRequest(OrderValidation.createOrderZodSchema),
     OrderController.createOrder,
 );
 router.get(
     "/my",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     OrderController.getMyOrders,
 );
 router.get(
     "/my/:id",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     OrderController.getMyOrder,
 );
 router.post(
     "/:id/pay",
-    checkAuth(Role.USER, Role.AGENT),
+    checkAuth(...CUSTOMER_ROLES),
     OrderController.initiatePayment,
 );
 router.get(
     "/",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN, Role.SUPPORT, Role.STAFF),
+    checkAuth(...ORDER_STAFF_ROLES),
     OrderController.getAllOrders,
 );
 router.patch(
     "/:id/status",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN, Role.SUPPORT, Role.STAFF),
+    checkAuth(...ORDER_STAFF_ROLES),
     validateRequest(OrderValidation.updateOrderStatusZodSchema),
     OrderController.changeOrderStatus,
 );

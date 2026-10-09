@@ -1,16 +1,16 @@
 import { Router } from "express";
-import { Role } from "../../../generated/prisma/enums";
 import { checkAuth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { OperatorController } from "./operator.controller";
 import { OperatorValidation } from "./operator.validation";
+import { CONTENT_ADMIN_ROLES } from "../../constants/rbac.constant";
 
 
 const router = Router();
 
 router.post(
     "/",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     validateRequest(OperatorValidation.createOperatorZodSchema),
     OperatorController.createOperator,
 );
@@ -18,13 +18,13 @@ router.get("/", OperatorController.getAllOperators);
 router.get("/:id", OperatorController.getOperatorById);
 router.patch(
     "/:id",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     validateRequest(OperatorValidation.updateOperatorZodSchema),
     OperatorController.updateOperator,
 );
 router.delete(
     "/:id",
-    checkAuth(Role.SUPER_ADMIN, Role.ADMIN),
+    checkAuth(...CONTENT_ADMIN_ROLES),
     OperatorController.deleteOperator,
 );
 
