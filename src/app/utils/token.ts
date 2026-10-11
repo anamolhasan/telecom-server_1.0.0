@@ -58,6 +58,19 @@ const setBatterAuthSessionCookie = (res: Response, token: string) => {
     })
 }
 
+const clearAuthCookies = (res: Response) => {
+    const options = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none' as const,
+        path: '/',
+    }
+
+    CookieUtils.clearCookie(res, 'accessToken', options)
+    CookieUtils.clearCookie(res, 'refreshToken', options)
+    CookieUtils.clearCookie(res, 'better-auth.session_token', options)
+}
+
 
 export const tokenUtils = {
     getAccessToken,
@@ -65,4 +78,5 @@ export const tokenUtils = {
     setAccessTokenCookie,
     setRefreshTokenCookie,
     setBatterAuthSessionCookie,
+    clearAuthCookies,
 }

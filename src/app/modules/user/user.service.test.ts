@@ -3,6 +3,7 @@ import type { Prisma } from "../../../generated/prisma/client";
 import { Role } from "../../../generated/prisma/enums";
 import { auth } from "../../lib/auth";
 import { UserService } from "./user.service";
+import { UserValidation } from "./user.validation";
 
 vi.mock("../../lib/auth", () => ({
     auth: { api: { signUpEmail: vi.fn() } },
@@ -92,6 +93,93 @@ describe("createStaffAccount", () => {
         expect(signUpEmailMock).not.toHaveBeenCalled();
     });
 
+    it("allows an ADMIN to create another ADMIN (rule 6)", async () => {
+        const tx = makeClient();
+        const createdUser = {
+            id: "u-admin2",
+            role: Role.ADMIN,
+            name: "Admin Two",
+            email: "admin2@x.com",
+            status: "ACTIVE",
+        };
+        tx.user.findUnique
+            .mockResolvedValueOnce(null)
+            .mockResolvedValue(createdUser as never);
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-admin2", role: Role.ADMIN, name: "Admin Two", email: "admin2@x.com" },
+            token: "tk",
+        } as never);
+
+        const result = await UserService.createStaffAccount(
+            { name: "Admin Two", email: "admin2@x.com", password: "secret1", role: Role.ADMIN },
+            actor({ role: Role.ADMIN }),
+            tx as unknown as Prisma.TransactionClient,
+        );
+
+        expect(result).toMatchObject({ role: Role.ADMIN });
+        // Privileged fields are `input: false` on better-auth, so role is applied
+        // server-side after sign-up rather than trusted from the request body.
+        expect(signUpEmailMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                body: expect.not.objectContaining({ role: Role.ADMIN }),
+            }),
+        );
+        expect(tx.user.update).toHaveBeenCalledWith({
+            where: { id: "u-admin2" },
+            data: { role: Role.ADMIN, needPasswordChange: true },
+        });
+    });
+
+    it("allows an ADMIN to create a MODERATOR", async () => {
+        const tx = makeClient();
+        const createdUser = {
+            id: "u-mod",
+            role: Role.MODERATOR,
+            name: "Mod",
+            email: "mod@x.com",
+            status: "ACTIVE",
+        };
+        tx.user.findUnique
+            .mockResolvedValueOnce(null)
+            .mockResolvedValue(createdUser as never);
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-mod", role: Role.MODERATOR, name: "Mod", email: "mod@x.com" },
+            token: "tk",
+        } as never);
+
+        const result = await UserService.createStaffAccount(
+            { name: "Mod", email: "mod@x.com", password: "secret1", role: Role.MODERATOR },
+            actor({ role: Role.ADMIN }),
+            tx as unknown as Prisma.TransactionClient,
+        );
+
+        expect(result).toMatchObject({ role: Role.MODERATOR });
+    });
+
+    it("rejects staff account creation by a MODERATOR", async () => {
+        const tx = makeClient();
+        await expect(
+            UserService.createStaffAccount(
+                { name: "X", email: "x@x.com", password: "secret1", role: Role.SUPPORTER },
+                actor({ role: Role.MODERATOR }),
+                tx as unknown as Prisma.TransactionClient,
+            ),
+        ).rejects.toMatchObject({ statusCode: 403 });
+        expect(signUpEmailMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects staff account creation by a SUPPORTER", async () => {
+        const tx = makeClient();
+        await expect(
+            UserService.createStaffAccount(
+                { name: "X", email: "x@x.com", password: "secret1", role: Role.MODERATOR },
+                actor({ role: Role.SUPPORTER }),
+                tx as unknown as Prisma.TransactionClient,
+            ),
+        ).rejects.toMatchObject({ statusCode: 403 });
+        expect(signUpEmailMock).not.toHaveBeenCalled();
+    });
+
     it("allows a SUPER_ADMIN to create another SUPER_ADMIN (rule 2)", async () => {
         const tx = makeClient();
         tx.user.findUnique
@@ -117,9 +205,13 @@ describe("createStaffAccount", () => {
         expect(result).toMatchObject({ role: Role.SUPER_ADMIN });
         expect(signUpEmailMock).toHaveBeenCalledWith(
             expect.objectContaining({
-                body: expect.objectContaining({ role: Role.SUPER_ADMIN }),
+                body: expect.not.objectContaining({ role: Role.SUPER_ADMIN }),
             }),
         );
+        expect(tx.user.update).toHaveBeenCalledWith({
+            where: { id: "u-sa2" },
+            data: { role: Role.SUPER_ADMIN, needPasswordChange: true },
+        });
         expect(tx.appUser.create).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({ authUserId: "u-sa2", canEarn: false }),
@@ -165,9 +257,13 @@ describe("createStaffAccount", () => {
         expect(result).toMatchObject(createdUser);
         expect(signUpEmailMock).toHaveBeenCalledWith(
             expect.objectContaining({
-                body: expect.objectContaining({ role: Role.ADMIN, needPasswordChange: true }),
+                body: expect.not.objectContaining({ role: Role.ADMIN, needPasswordChange: true }),
             }),
         );
+        expect(tx.user.update).toHaveBeenCalledWith({
+            where: { id: "u-new" },
+            data: { role: Role.ADMIN, needPasswordChange: true },
+        });
         expect(tx.appUser.create).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({ authUserId: "u-new", canEarn: false }),
@@ -185,6 +281,103 @@ describe("createStaffAccount", () => {
             ),
         ).rejects.toMatchObject({ statusCode: 409 });
         expect(signUpEmailMock).not.toHaveBeenCalled();
+    });
+
+    it("normalizes email casing so a case-variant duplicate is still rejected with CONFLICT", async () => {
+        const tx = makeClient({ target: { id: "existing", role: Role.USER } });
+        await expect(
+            UserService.createStaffAccount(
+                { name: "Dup", email: "  DUP@X.com ", password: "secret1", role: Role.MODERATOR },
+                actor(),
+                tx as unknown as Prisma.TransactionClient,
+            ),
+        ).rejects.toMatchObject({ statusCode: 409 });
+        expect(tx.user.findUnique).toHaveBeenCalledWith({
+            where: { email: "dup@x.com" },
+            select: { id: true },
+        });
+        expect(signUpEmailMock).not.toHaveBeenCalled();
+    });
+});
+
+describe("createStaffUserZodSchema", () => {
+    const base = {
+        name: "Staff",
+        email: "staff@x.com",
+        password: "secret1",
+        role: Role.MODERATOR,
+    };
+
+    it("accepts an allowed staff role", () => {
+        const parsed = UserValidation.createStaffUserZodSchema.safeParse({
+            ...base,
+            role: Role.ADMIN,
+        });
+
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+            expect(parsed.data.role).toBe(Role.ADMIN);
+        }
+    });
+
+    it("strips unexpected and privileged fields", () => {
+        const parsed = UserValidation.createStaffUserZodSchema.safeParse({
+            ...base,
+            status: "BLOCKED",
+            balance: 9999,
+            canEarn: true,
+            isDeleted: true,
+            id: "attacker",
+            authUserId: "attacker",
+            appUser: { canEarn: true },
+        });
+
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+            const data = parsed.data as Record<string, unknown>;
+            expect(data).not.toHaveProperty("status");
+            expect(data).not.toHaveProperty("balance");
+            expect(data).not.toHaveProperty("canEarn");
+            expect(data).not.toHaveProperty("isDeleted");
+            expect(data).not.toHaveProperty("id");
+            expect(data).not.toHaveProperty("authUserId");
+            expect(data).not.toHaveProperty("appUser");
+        }
+    });
+
+    it("rejects an AGENT role (AGENT comes from an application approval)", () => {
+        const parsed = UserValidation.createStaffUserZodSchema.safeParse({
+            ...base,
+            role: Role.AGENT,
+        });
+
+        expect(parsed.success).toBe(false);
+    });
+
+    it("rejects an invalid email and a short password", () => {
+        expect(
+            UserValidation.createStaffUserZodSchema.safeParse({
+                ...base,
+                email: "not-an-email",
+            }).success,
+        ).toBe(false);
+
+        expect(
+            UserValidation.createStaffUserZodSchema.safeParse({
+                ...base,
+                password: "123",
+            }).success,
+        ).toBe(false);
+    });
+
+    it("rejects a missing role", () => {
+        expect(
+            UserValidation.createStaffUserZodSchema.safeParse({
+                name: "Staff",
+                email: "staff@x.com",
+                password: "secret1",
+            }).success,
+        ).toBe(false);
     });
 });
 

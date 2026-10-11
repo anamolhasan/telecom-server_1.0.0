@@ -40,8 +40,8 @@ export const AGENT_APPLICATION_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
 // Who may CREATE accounts with each role. AGENT accounts are deliberately excluded:
 // an AGENT is created by approving an Agent Application, not by direct staff creation.
 // Rule 2: only SUPER_ADMIN can create another SUPER_ADMIN.
-// Rules 5-6: SUPER_ADMIN creates ADMIN/MODERATOR/SUPPORTER/EMPLOYEE;
-//            ADMIN creates MODERATOR/SUPPORTER/EMPLOYEE (never another ADMIN).
+// Rule 5: SUPER_ADMIN creates SUPER_ADMIN/ADMIN/MODERATOR/SUPPORTER/EMPLOYEE.
+// Rule 6: ADMIN creates ADMIN/MODERATOR/SUPPORTER/EMPLOYEE (never a SUPER_ADMIN).
 export const CREATABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
     [Role.SUPER_ADMIN]: [
         Role.SUPER_ADMIN,
@@ -50,7 +50,7 @@ export const CREATABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
         Role.SUPPORTER,
         Role.EMPLOYEE,
     ],
-    [Role.ADMIN]: [Role.MODERATOR, Role.SUPPORTER, Role.EMPLOYEE],
+    [Role.ADMIN]: [Role.ADMIN, Role.MODERATOR, Role.SUPPORTER, Role.EMPLOYEE],
     [Role.MODERATOR]: [],
     [Role.SUPPORTER]: [],
     [Role.EMPLOYEE]: [],
@@ -61,8 +61,8 @@ export const CREATABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
 // Who may MANAGE (view details, update profile, update status, delete) a target role.
 // Rule 1: SUPER_ADMIN and ADMIN manage all other roles except the restrictions below.
 // Rule 4: ADMIN can never manage a SUPER_ADMIN.
-// Rule 6: ADMIN cannot manage another ADMIN (administrators are peers of each other);
-//         ADMIN does manage MODERATOR/SUPPORTER/EMPLOYEE plus customers (USER/AGENT).
+// Note: ADMIN cannot manage another ADMIN (administrators are peers of each other);
+//       ADMIN does manage MODERATOR/SUPPORTER/EMPLOYEE plus customers (USER/AGENT).
 export const MANAGEABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
     [Role.SUPER_ADMIN]: ALL_ROLES,
     [Role.ADMIN]: [

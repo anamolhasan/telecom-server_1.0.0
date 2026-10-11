@@ -71,8 +71,12 @@ const createStaffAccount = async (
         );
     }
 
+    // better-auth normalizes emails to lower case on write, so the duplicate
+    // pre-check must use the same normalization to reliably return 409.
+    const email = payload.email.trim().toLowerCase();
+
     const existing = await client.user.findUnique({
-        where: { email: payload.email },
+        where: { email },
         select: { id: true },
     });
 
@@ -82,13 +86,14 @@ const createStaffAccount = async (
 
     let signUp: any;
     try {
+        // `role` and `needPasswordChange` are intentionally NOT sent to better-auth:
+        // they are configured as `input: false` and would be ignored/forced to their
+        // defaults anyway. The granted role is applied explicitly below, server-side.
         signUp = await auth.api.signUpEmail({
             body: {
                 name: payload.name,
-                email: payload.email,
+                email,
                 password: payload.password,
-                role: payload.role,
-                needPasswordChange: true,
                 rememberMe: false,
             },
         });
@@ -105,6 +110,11 @@ const createStaffAccount = async (
     }
 
     try {
+        await client.user.update({
+            where: { id: authUserId },
+            data: { role: payload.role, needPasswordChange: true },
+        });
+
         await client.appUser.create({
             data: {
                 authUserId,

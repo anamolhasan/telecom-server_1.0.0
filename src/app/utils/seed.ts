@@ -66,8 +66,6 @@ export const seedSuperAdmin = async (
             email,
             password,
             name,
-            role: Role.SUPER_ADMIN,
-            needPasswordChange: false,
             rememberMe: false,
         },
     });
@@ -78,9 +76,10 @@ export const seedSuperAdmin = async (
     }
 
     try {
+        // `role` is `input: false` on better-auth, so it is granted explicitly here.
         await client.user.update({
             where: { id: createdUserId },
-            data: { emailVerified: true },
+            data: { emailVerified: true, role: Role.SUPER_ADMIN },
         });
         await client.appUser.create({
             data: { authUserId: createdUserId },

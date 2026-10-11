@@ -49,21 +49,24 @@ describe("seedSuperAdmin", () => {
         await seedSuperAdmin(validConfig, mocks.tx as unknown as Prisma.TransactionClient);
 
         expect(signUpEmailMock).toHaveBeenCalledTimes(1);
+        // Role is never sent to better-auth (privileged fields are `input: false`);
+        // the granted role is applied explicitly, server-side.
         expect(signUpEmailMock).toHaveBeenCalledWith(
             expect.objectContaining({
                 body: expect.objectContaining({
                     name: validConfig.name,
                     email: validConfig.email,
                     password: validConfig.password,
-                    role: Role.SUPER_ADMIN,
-                    needPasswordChange: false,
                 }),
             }),
         );
+        const signUpBody = signUpEmailMock.mock.calls[0][0].body as Record<string, unknown>;
+        expect(signUpBody).not.toHaveProperty("role");
+        expect(signUpBody).not.toHaveProperty("needPasswordChange");
         expect(mocks.tx.user.update).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: { id: "u-sa" },
-                data: expect.objectContaining({ emailVerified: true }),
+                data: expect.objectContaining({ emailVerified: true, role: Role.SUPER_ADMIN }),
             }),
         );
         expect(mocks.tx.appUser.create).toHaveBeenCalledWith(
