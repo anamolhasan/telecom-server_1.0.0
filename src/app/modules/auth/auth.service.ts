@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma";
 import { Role, UserStatus } from "../../../generated/prisma/enums";
 import { tokenUtils } from "../../utils/token";
 import { jwtUtils } from "../../utils/jwt";
+import { generateUniqueReferralCode } from "../../utils/referralCode";
 import { envVars } from "../../config/env";
 import { IRequestUser } from "../../interfaces/requestUser.interface";
 import { UserService } from "../user/user.service";
@@ -26,7 +27,7 @@ const createTokenPayload = (user: {
 
 
 const registerUser = async (payload: IRegisterAppUserPayload) => {
-    const { name, email, password } = payload
+    const { name, email, password, referralCode } = payload
 
     let data;
 
@@ -50,10 +51,37 @@ const registerUser = async (payload: IRegisterAppUserPayload) => {
     }
 
     try {
+        const normalizedReferralCode = referralCode?.trim().toUpperCase()
+
         const appUser = await prisma.$transaction(async (tx) => {
+            let referredBy: string | null = null
+
+            if (normalizedReferralCode) {
+                const referrer = await tx.appUser.findUnique({
+                    where: { referralCode: normalizedReferralCode },
+                    select: {
+                        id: true,
+                        authUserId: true,
+                        isDeleted: true,
+                    },
+                })
+
+                if (!referrer || referrer.isDeleted) {
+                    throw new AppError(status.BAD_REQUEST, "Invalid referral code")
+                }
+
+                if (referrer.authUserId === data.user.id) {
+                    throw new AppError(status.BAD_REQUEST, "You cannot refer yourself")
+                }
+
+                referredBy = referrer.id
+            }
+
             const appUserTx = await tx.appUser.create({
                 data: {
-                    authUserId: data.user.id
+                    authUserId: data.user.id,
+                    referralCode: await generateUniqueReferralCode(tx),
+                    ...(referredBy ? { referredBy } : {}),
                 }
             })
             return appUserTx

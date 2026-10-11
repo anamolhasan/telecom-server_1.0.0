@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Role } from "../../../generated/prisma/enums";
+import { ReferralApplicationStatus, Role } from "../../../generated/prisma/enums";
 import { AuthService } from "./auth.service";
 import { AuthValidation } from "./auth.validation";
 
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
                 id: "app1",
                 ...args.data,
             })),
+            findUnique: vi.fn(),
             updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
         user: {
@@ -249,6 +250,109 @@ describe("registerUser (public registration)", () => {
             expect(parsed.data).not.toHaveProperty("role");
             expect(parsed.data).not.toHaveProperty("isAdmin");
         }
+    });
+});
+
+describe("registerUser referral attribution", () => {
+    it("attributes a new account to a referrer regardless of application status", async () => {
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-new", role: Role.USER, name: "New", email: "new@x.com" },
+        });
+        mocks.tx.appUser.findUnique.mockImplementation(
+            async ({ where }: { where?: { referralCode?: string } }) =>
+                where?.referralCode === "CODE1234"
+                    ? {
+                          id: "partner-1",
+                          authUserId: "u-partner",
+                          isDeleted: false,
+                          referralApplication: { status: ReferralApplicationStatus.PENDING },
+                      }
+                    : null,
+        );
+
+        await AuthService.registerUser({
+            name: "New",
+            email: "new@x.com",
+            password: "secret1",
+            referralCode: "code1234",
+        });
+
+        expect(mocks.tx.appUser.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { referralCode: "CODE1234" } }),
+        );
+        expect(mocks.tx.appUser.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    authUserId: "u-new",
+                    referredBy: "partner-1",
+                    referralCode: expect.any(String),
+                }),
+            }),
+        );
+    });
+
+    it("rejects an unknown referral code and creates no account", async () => {
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-new", role: Role.USER, name: "New", email: "new@x.com" },
+        });
+        mocks.tx.appUser.findUnique.mockResolvedValue(null);
+
+        await expect(
+            AuthService.registerUser({
+                name: "New",
+                email: "new@x.com",
+                password: "secret1",
+                referralCode: "missing",
+            }),
+        ).rejects.toMatchObject({ statusCode: 400, message: "Invalid referral code" });
+
+        expect(mocks.tx.appUser.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects self-referral when the code resolves to the account being registered", async () => {
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-self", role: Role.USER, name: "Self", email: "self@x.com" },
+        });
+        mocks.tx.appUser.findUnique.mockImplementation(
+            async ({ where }: { where?: { referralCode?: string } }) =>
+                where?.referralCode === "SELF1234"
+                    ? { id: "self-app", authUserId: "u-self", isDeleted: false }
+                    : null,
+        );
+
+        await expect(
+            AuthService.registerUser({
+                name: "Self",
+                email: "self@x.com",
+                password: "secret1",
+                referralCode: "SELF1234",
+            }),
+        ).rejects.toMatchObject({ statusCode: 400, message: "You cannot refer yourself" });
+
+        expect(mocks.tx.appUser.create).not.toHaveBeenCalled();
+    });
+
+    it("registers without attribution when no referral code is supplied", async () => {
+        signUpEmailMock.mockResolvedValue({
+            user: { id: "u-plain", role: Role.USER, name: "Plain", email: "plain@x.com" },
+        });
+
+        await AuthService.registerUser({
+            name: "Plain",
+            email: "plain@x.com",
+            password: "secret1",
+        });
+
+        expect(mocks.tx.appUser.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    authUserId: "u-plain",
+                    referralCode: expect.any(String),
+                }),
+            }),
+        );
+        const createData = mocks.tx.appUser.create.mock.calls[0][0].data as Record<string, unknown>;
+        expect(createData.referredBy).toBeUndefined();
     });
 });
 

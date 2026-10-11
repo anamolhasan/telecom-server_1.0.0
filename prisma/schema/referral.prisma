@@ -7,6 +7,14 @@ model ReferralApplication {
 
     status          ReferralApplicationStatus @default(PENDING)
 
+    // 📣 Applicant-provided details
+    promotionMethod ReferralPromotionMethod?
+    promotionUrl    String?
+    reason          String?                   @db.Text
+
+    // 📜 Terms acceptance
+    termsAccepted   Boolean                   @default(false)
+
     // Review bookkeeping
     reviewedById    String?
     reviewedBy      User?                     @relation("ReferralApplicationReviewer", fields: [reviewedById], references: [id])

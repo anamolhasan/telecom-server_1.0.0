@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
                 id: "app1",
                 ...args.data,
             })),
+            findUnique: vi.fn().mockResolvedValue(null),
         },
     };
     const authMock = { api: { signUpEmail: vi.fn() } };

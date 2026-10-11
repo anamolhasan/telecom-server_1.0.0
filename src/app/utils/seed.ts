@@ -7,6 +7,7 @@ import { envVars } from "../config/env";
 import AppError from "../errorHelpers/AppError";
 import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
+import { generateUniqueReferralCode } from "./referralCode";
 
 interface ISuperAdminSeedConfig {
     name: string;
@@ -82,7 +83,7 @@ export const seedSuperAdmin = async (
             data: { emailVerified: true, role: Role.SUPER_ADMIN },
         });
         await client.appUser.create({
-            data: { authUserId: createdUserId },
+            data: { authUserId: createdUserId, referralCode: await generateUniqueReferralCode(client) },
         });
         console.log('Super admin created successfully.');
     } catch (error) {

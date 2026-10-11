@@ -70,6 +70,14 @@ enum ReferralApplicationStatus {
   REJECTED
 }
 
+enum ReferralPromotionMethod {
+  SOCIAL_MEDIA
+  MESSAGING_APPS
+  FRIENDS_FAMILY
+  COMMUNITY_GROUP
+  OTHER
+}
+
 enum AgentApplicationStatus {
   PENDING
   APPROVED

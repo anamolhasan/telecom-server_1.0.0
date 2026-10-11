@@ -33,6 +33,7 @@ const makeClient = (overrides: IClientOverrides = {}) => {
                 id: "app1",
                 ...args.data,
             })),
+            findUnique: vi.fn().mockResolvedValue(null),
             update: vi.fn().mockResolvedValue({}),
             updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },

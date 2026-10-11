@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Prisma } from "../../../generated/prisma/client";
 import {
     ReferralApplicationStatus,
+    ReferralPromotionMethod,
     Role,
     WalletTransactionReason,
     WalletTransactionType,
@@ -93,6 +94,127 @@ describe("getActiveReferredCount", () => {
         const tx = makeReferralTx({ referredUsers: [] });
         const count = await ReferralService.getActiveReferredCount(tx, "referrer");
         expect(count).toBe(0);
+    });
+});
+
+describe("getPartnerReferralDashboard", () => {
+    const buildClient = (
+        status: ReferralApplicationStatus | null,
+        referredUsers: Array<{
+            id: string;
+            authUserId: string;
+            createdAt: Date;
+            authUser: { name: string; email: string };
+        }>,
+        qualifyingGroups: { userId: string }[],
+    ) =>
+        ({
+            appUser: {
+                findUnique: vi.fn().mockResolvedValue({
+                    id: "partner-1",
+                    authUserId: "auth-partner",
+                    referralCode: "CODE1234",
+                    referralIncomeEligible: false,
+                    referralApplication: status === null ? null : { status },
+                }),
+                findMany: vi.fn().mockResolvedValue(referredUsers),
+            },
+            order: {
+                groupBy: vi.fn().mockResolvedValue(qualifyingGroups),
+            },
+        }) as unknown as Prisma.TransactionClient;
+
+    const request = { userId: "auth-partner", role: Role.USER, email: "partner@x.com" };
+
+    it("returns the code, totals and per-referral active status", async () => {
+        const client = buildClient(
+            ReferralApplicationStatus.APPROVED,
+            [
+                { id: "r1", authUserId: "a", createdAt: new Date("2026-01-01"), authUser: { name: "A", email: "a@x.com" } },
+                { id: "r2", authUserId: "b", createdAt: new Date("2026-01-02"), authUser: { name: "B", email: "b@x.com" } },
+            ],
+            [{ userId: "a" }],
+        );
+
+        const result = await ReferralService.getPartnerReferralDashboard(request, client);
+
+        expect(result.referralCode).toBe("CODE1234");
+        expect(result.totalReferredCount).toBe(2);
+        expect(result.activeReferredCount).toBe(1);
+        expect(result.targetActiveReferrals).toBe(3);
+        expect(result.referrals.find((r) => r.id === "r1")?.isActive).toBe(true);
+        expect(result.referrals.find((r) => r.id === "r2")?.isActive).toBe(false);
+    });
+
+    it("returns a zeroed empty state when no referred accounts exist", async () => {
+        const client = buildClient(ReferralApplicationStatus.APPROVED, [], []);
+
+        const result = await ReferralService.getPartnerReferralDashboard(request, client);
+
+        expect(result.totalReferredCount).toBe(0);
+        expect(result.activeReferredCount).toBe(0);
+        expect(result.referrals).toEqual([]);
+        expect(client.order.groupBy).not.toHaveBeenCalled();
+    });
+
+    it("forbids access for non-approved applicants", async () => {
+        const client = buildClient(ReferralApplicationStatus.PENDING, [], []);
+
+        await expect(
+            ReferralService.getPartnerReferralDashboard(request, client),
+        ).rejects.toMatchObject({ statusCode: 403 });
+    });
+});
+
+describe("getDefaultReferralCode", () => {
+    const makeSettingClient = (overrides: {
+        setting?: { key: string; value: string } | null;
+        referrer?: { isDeleted: boolean; authUser: { isDeleted: boolean } } | null;
+    }) => {
+        const client = {
+            systemSetting: {
+                findUnique: vi.fn().mockResolvedValue(
+                    overrides.setting === undefined
+                        ? { key: "DEFAULT_REFERRAL_CODE", value: "GLOBAL1" }
+                        : overrides.setting,
+                ),
+            },
+            appUser: {
+                findUnique: vi.fn().mockResolvedValue(
+                    overrides.referrer === undefined
+                        ? { isDeleted: false, authUser: { isDeleted: false } }
+                        : overrides.referrer,
+                ),
+            },
+        };
+
+        return client as unknown as Prisma.TransactionClient;
+    };
+
+    it("returns the persisted global default referral code", async () => {
+        const client = makeSettingClient({});
+
+        await expect(ReferralService.getDefaultReferralCode(client)).resolves.toEqual({
+            referralCode: "GLOBAL1",
+        });
+    });
+
+    it("returns a null code when no global default is configured", async () => {
+        const client = makeSettingClient({ setting: null });
+
+        await expect(ReferralService.getDefaultReferralCode(client)).resolves.toEqual({
+            referralCode: null,
+        });
+    });
+
+    it("returns a null code when the configured referrer is no longer eligible", async () => {
+        const client = makeSettingClient({
+            referrer: { isDeleted: true, authUser: { isDeleted: false } },
+        });
+
+        await expect(ReferralService.getDefaultReferralCode(client)).resolves.toEqual({
+            referralCode: null,
+        });
     });
 });
 
@@ -239,11 +361,38 @@ describe("applyForReferralIncome (one-time application)", () => {
 
         const result = await ReferralService.applyForReferralIncome(
             { userId: "user1", role: Role.USER, email: "u@x.com" },
+            {},
             client,
         );
 
         expect(result.status).toBe(ReferralApplicationStatus.PENDING);
         expect(tx.referralApplication.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("persists the applicant-provided referral details", async () => {
+        const { client, tx } = makeApplyClient(null);
+
+        await ReferralService.applyForReferralIncome(
+            { userId: "user1", role: Role.USER, email: "u@x.com" },
+            {
+                promotionMethod: ReferralPromotionMethod.SOCIAL_MEDIA,
+                promotionUrl: "https://example.com/promo",
+                reason: "I will promote RizqifyBD on my social channels.",
+                termsAccepted: true,
+            },
+            client,
+        );
+
+        expect(tx.referralApplication.create).toHaveBeenCalledWith({
+            data: {
+                appUserId: "app1",
+                status: ReferralApplicationStatus.PENDING,
+                promotionMethod: ReferralPromotionMethod.SOCIAL_MEDIA,
+                promotionUrl: "https://example.com/promo",
+                reason: "I will promote RizqifyBD on my social channels.",
+                termsAccepted: true,
+            },
+        });
     });
 
     it("blocks a second (duplicate) application", async () => {
@@ -256,9 +405,109 @@ describe("applyForReferralIncome (one-time application)", () => {
         await expect(
             ReferralService.applyForReferralIncome(
                 { userId: "user1", role: Role.USER, email: "u@x.com" },
+                {},
                 client,
             ),
         ).rejects.toThrow("already submitted");
+    });
+});
+
+describe("getMyReferral (own application only)", () => {
+    interface IReadOverrides {
+        appUser?: {
+            id: string;
+            referralCode?: string;
+            referralIncomeEligible: boolean;
+            referralApplication: unknown;
+            referrer: unknown;
+        } | null;
+        application?: unknown;
+        referrals?: { id: string; createdAt: string; authUser: { name: string; email: string } }[];
+    }
+
+    const makeReadClient = (overrides: IReadOverrides = {}) => {
+        const client = {
+            appUser: {
+                findUnique: vi.fn().mockResolvedValue(
+                    overrides.appUser === undefined
+                        ? {
+                              id: "app1",
+                              referralCode: "CODE1234",
+                              referralIncomeEligible: true,
+                              referralApplication: {
+                                  id: "ra1",
+                                  appUserId: "app1",
+                                  status: ReferralApplicationStatus.PENDING,
+                              },
+                              referrer: null,
+                          }
+                        : overrides.appUser,
+                ),
+                findMany: vi.fn().mockResolvedValue(overrides.referrals ?? []),
+            },
+            referralApplication: {
+                findUnique: vi.fn().mockResolvedValue(
+                    overrides.application === undefined
+                        ? {
+                              id: "ra1",
+                              appUserId: "app1",
+                              status: ReferralApplicationStatus.PENDING,
+                          }
+                        : overrides.application,
+                ),
+            },
+            order: {
+                groupBy: vi.fn().mockResolvedValue([]),
+            },
+        };
+
+        return client as unknown as Prisma.TransactionClient;
+    };
+
+    it("scopes the lookup to the authenticated user and returns their application", async () => {
+        const client = makeReadClient();
+
+        const result = await ReferralService.getMyReferral(
+            { userId: "user1", role: Role.USER, email: "u@x.com" },
+            client,
+        );
+
+        expect(client.appUser.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { authUserId: "user1" } }),
+        );
+        expect(result.application).toMatchObject({ id: "ra1", appUserId: "app1" });
+        expect(result.referralCode).toBe("CODE1234");
+    });
+
+    it("returns a null application when the user has not applied yet", async () => {
+        const client = makeReadClient({
+            appUser: {
+                id: "app1",
+                referralIncomeEligible: false,
+                referralApplication: null,
+                referrer: null,
+            },
+            application: null,
+        });
+
+        const result = await ReferralService.getMyReferral(
+            { userId: "user1", role: Role.USER, email: "u@x.com" },
+            client,
+        );
+
+        expect(result.application).toBeNull();
+        expect(result.eligibility.approved).toBe(false);
+    });
+
+    it("throws NOT_FOUND when the caller has no app user record", async () => {
+        const client = makeReadClient({ appUser: null });
+
+        await expect(
+            ReferralService.getMyReferral(
+                { userId: "ghost", role: Role.USER, email: "g@x.com" },
+                client,
+            ),
+        ).rejects.toMatchObject({ statusCode: 404 });
     });
 });
 

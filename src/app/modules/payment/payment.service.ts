@@ -4,6 +4,7 @@ import { Prisma } from "../../../generated/prisma/client";
 import {
     OrderStatus,
     PaymentStatus,
+    ReferralApplicationStatus,
     WalletTransactionReason,
     WalletTransactionType,
 } from "../../../generated/prisma/enums";
@@ -107,9 +108,16 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
             if (previousPaidOrders === 0) {
                 const referrer = await tx.appUser.findUnique({
                     where: { id: appUser.referredBy },
+                    include: {
+                        referralApplication: {
+                            select: { status: true },
+                        },
+                    },
                 });
 
-                if (referrer) {
+                // Referral tracking is open to every user, but income features are
+                // only available to approved referral partners.
+                if (referrer && referrer.referralApplication?.status === ReferralApplicationStatus.APPROVED) {
                     await applyWalletTransaction(tx, {
                         userId: referrer.authUserId,
                         amount: REFERRAL_REWARD_AMOUNT,

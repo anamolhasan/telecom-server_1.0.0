@@ -13,6 +13,7 @@ import { IRequestUser } from "../../interfaces/requestUser.interface";
 import { auth } from "../../lib/auth";
 import { prisma } from "../../lib/prisma";
 import { QueryBuilder } from "../../utils/QueryBuilder";
+import { generateUniqueReferralCode } from "../../utils/referralCode";
 import {
     ICreateStaffPayload,
     IUpdateUserProfilePayload,
@@ -121,6 +122,7 @@ const createStaffAccount = async (
                 canEarn: payload.role === Role.AGENT,
                 profilePhoto: payload.profilePhoto,
                 contactNumber: payload.contactNumber,
+                referralCode: await generateUniqueReferralCode(client),
             },
         });
 

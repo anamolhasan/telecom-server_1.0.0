@@ -20,9 +20,10 @@ model AppUser {
     referralIncomeEligible Boolean @default(false)
 
     // 🔗 Referral System
-    referredBy String?
-    referrer   AppUser?  @relation("Referral", fields: [referredBy], references: [id])
-    referrals  AppUser[] @relation("Referral")
+    referralCode String @unique
+    referredBy   String?
+    referrer     AppUser?  @relation("Referral", fields: [referredBy], references: [id])
+    referrals    AppUser[] @relation("Referral")
 
     // 💳 Referral Income program (one application per user)
     referralApplication ReferralApplication?

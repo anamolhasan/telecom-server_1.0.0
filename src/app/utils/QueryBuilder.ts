@@ -75,10 +75,8 @@ export class QueryBuilder<
 
               return {
                 [relation]: {
-                  some: {
-                    [nestedRelation]: {
-                      [nestedField]: stringFilter,
-                    },
+                  [nestedRelation]: {
+                    [nestedField]: stringFilter,
                   },
                 },
               };
@@ -171,40 +169,26 @@ export class QueryBuilder<
           const [relation, nestedRelation, nestedField] = parts;
 
           if (!queryWhere[relation]) {
-            queryWhere[relation] = {
-              some: {},
-            };
-            countQueryWhere[relation] = {
-              some: {},
-            };
+            queryWhere[relation] = {};
+            countQueryWhere[relation] = {};
           }
 
           const queryRelation = queryWhere[relation] as Record<string, unknown>;
           const countRelation = countQueryWhere[relation] as Record<string, unknown>;
 
-          if (!queryRelation.some) {
-            queryRelation.some = {};
-          }
-          if (!countRelation.some) {
-            countRelation.some = {};
+          if (!queryRelation[nestedRelation]) {
+            queryRelation[nestedRelation] = {};
           }
 
-          const querySome = queryRelation.some as Record<string, unknown>;
-          const countSome = countRelation.some as Record<string, unknown>;
-
-          if (!querySome[nestedRelation]) {
-            querySome[nestedRelation] = {};
+          if (!countRelation[nestedRelation]) {
+            countRelation[nestedRelation] = {};
           }
 
-          if (!countSome[nestedRelation]) {
-            countSome[nestedRelation] = {};
-          }
-
-          const queryNestedRelation = querySome[nestedRelation] as Record<
+          const queryNestedRelation = queryRelation[nestedRelation] as Record<
             string,
             unknown
           >;
-          const countNestedRelation = countSome[nestedRelation] as Record<
+          const countNestedRelation = countRelation[nestedRelation] as Record<
             string,
             unknown
           >;

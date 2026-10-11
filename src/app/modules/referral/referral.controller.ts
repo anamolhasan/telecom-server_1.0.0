@@ -7,7 +7,7 @@ import { ReferralService } from "./referral.service";
 
 
 const applyForReferralIncome = catchAsync(async (req: Request, res: Response) => {
-    const result = await ReferralService.applyForReferralIncome(req.user!);
+    const result = await ReferralService.applyForReferralIncome(req.user!, req.body);
 
     sendResponse(res, {
         httpStatusCode: status.CREATED,
@@ -24,6 +24,28 @@ const getMyReferral = catchAsync(async (req: Request, res: Response) => {
         httpStatusCode: status.OK,
         success: true,
         message: "Referral information fetched successfully",
+        data: result,
+    });
+});
+
+const getDefaultReferralCode = catchAsync(async (req: Request, res: Response) => {
+    const result = await ReferralService.getDefaultReferralCode();
+
+    sendResponse(res, {
+        httpStatusCode: status.OK,
+        success: true,
+        message: "Default referral code fetched successfully",
+        data: result,
+    });
+});
+
+const getPartnerReferral = catchAsync(async (req: Request, res: Response) => {
+    const result = await ReferralService.getPartnerReferralDashboard(req.user!);
+
+    sendResponse(res, {
+        httpStatusCode: status.OK,
+        success: true,
+        message: "Referral partner dashboard fetched successfully",
         data: result,
     });
 });
@@ -58,6 +80,8 @@ const reviewApplication = catchAsync(async (req: Request, res: Response) => {
 export const ReferralController = {
     applyForReferralIncome,
     getMyReferral,
+    getDefaultReferralCode,
+    getPartnerReferral,
     getAllApplications,
     reviewApplication,
 };

@@ -5,6 +5,15 @@ export const registerAppUserZodSchema = z.object({
     name: z.string().min(1, "Name is required"),
     email: z.string().email("Invalid email address"),
     password: z.string().min(6, "Password must be at least 6 characters"),
+    // Optional referral code from a shared link. Never trusted as-is: resolved
+    // and validated server-side before any referral link is written.
+    referralCode: z
+        .string()
+        .trim()
+        .min(1)
+        .max(32)
+        .regex(/^[A-Za-z0-9]+$/, "Invalid referral code")
+        .optional(),
 });
 
 export const loginAppUserZodSchema = z.object({

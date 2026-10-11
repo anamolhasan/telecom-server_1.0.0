@@ -5,13 +5,22 @@ import {
     PaymentStatus,
     ReferralApplicationStatus,
 } from "../../../generated/prisma/enums";
-import { REFERRAL_ACTIVE_MONTHS } from "../../constants/telecom.constant";
+import {
+    REFERRAL_ACTIVE_MONTHS,
+    REFERRAL_MIN_ACTIVE_REFERRALS,
+} from "../../constants/telecom.constant";
 import AppError from "../../errorHelpers/AppError";
 import { IQueryParams, PrismaModelDelegate } from "../../interfaces/query.interface";
 import { IRequestUser } from "../../interfaces/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { QueryBuilder } from "../../utils/QueryBuilder";
-import { IReviewReferralApplicationPayload } from "./referral.interface";
+import { SettingService } from "../setting/setting.service";
+import {
+    IPartnerReferralDashboard,
+    IReviewReferralApplicationPayload,
+    ISubmitReferralApplicationPayload,
+    IDefaultReferralCode,
+} from "./referral.interface";
 import {
     computeReferralEligibility,
     IReferralEligibility,
@@ -28,8 +37,34 @@ const APPLICATION_STATUS_TRANSITIONS: Record<ReferralApplicationStatus, Referral
     [ReferralApplicationStatus.REJECTED]: [],
 };
 
+// Resolve which referred accounts are ACTIVE: at least one qualifying offer purchase
+// (COMPLETED + PAID) inside the rolling previous N months. Grouped by user so a referred
+// account is counted once regardless of how many qualifying purchases it has.
+const getQualifyingReferredAuthUserIds = async (
+    client: Prisma.TransactionClient | typeof prisma,
+    referredAuthUserIds: string[],
+    now: Date = new Date(),
+): Promise<Set<string>> => {
+    if (referredAuthUserIds.length === 0) {
+        return new Set<string>();
+    }
+
+    const cutoff = subtractMonths(now, REFERRAL_ACTIVE_MONTHS);
+
+    const qualifiedByUser = await client.order.groupBy({
+        by: ["userId"],
+        where: {
+            userId: { in: referredAuthUserIds },
+            status: OrderStatus.COMPLETED,
+            paymentStatus: PaymentStatus.PAID,
+            completedAt: { gte: cutoff },
+        },
+    });
+
+    return new Set(qualifiedByUser.map((row) => row.userId));
+};
+
 // Count distinct active referred accounts for a referrer.
-// A referred account is counted once, regardless of the number of qualifying purchases.
 export const getActiveReferredCount = async (
     tx: Prisma.TransactionClient,
     appUserId: string,
@@ -40,23 +75,13 @@ export const getActiveReferredCount = async (
         select: { authUserId: true },
     });
 
-    if (referredUsers.length === 0) {
-        return 0;
-    }
+    const activeAuthUserIds = await getQualifyingReferredAuthUserIds(
+        tx,
+        referredUsers.map((user) => user.authUserId),
+        now,
+    );
 
-    const cutoff = subtractMonths(now, REFERRAL_ACTIVE_MONTHS);
-
-    const qualifiedByUser = await tx.order.groupBy({
-        by: ["userId"],
-        where: {
-            userId: { in: referredUsers.map((user) => user.authUserId) },
-            status: OrderStatus.COMPLETED,
-            paymentStatus: PaymentStatus.PAID,
-            completedAt: { gte: cutoff },
-        },
-    });
-
-    return qualifiedByUser.length;
+    return activeAuthUserIds.size;
 };
 
 // Eligibility is always derived from live data (never trusted from clients).
@@ -92,6 +117,7 @@ const refreshReferralIncomeCache = async (
 
 const applyForReferralIncome = async (
     user: IRequestUser,
+    payload: ISubmitReferralApplicationPayload = {},
     client: Prisma.TransactionClient = prisma,
 ) => {
     const appUser = await client.appUser.findUnique({
@@ -122,13 +148,20 @@ const applyForReferralIncome = async (
             data: {
                 appUserId: appUser.id,
                 status: ReferralApplicationStatus.PENDING,
+                promotionMethod: payload.promotionMethod ?? null,
+                promotionUrl: payload.promotionUrl?.trim() || null,
+                reason: payload.reason?.trim() || null,
+                termsAccepted: payload.termsAccepted ?? false,
             },
         });
     });
 };
 
-const getMyReferral = async (user: IRequestUser) => {
-    const appUser = await prisma.appUser.findUnique({
+const getMyReferral = async (
+    user: IRequestUser,
+    client: Prisma.TransactionClient = prisma,
+) => {
+    const appUser = await client.appUser.findUnique({
         where: { authUserId: user.userId },
         include: {
             referralApplication: true,
@@ -144,9 +177,9 @@ const getMyReferral = async (user: IRequestUser) => {
         throw new AppError(status.NOT_FOUND, "App user not found");
     }
 
-    const eligibilityStatus = await getReferralStatus(prisma, appUser.id);
+    const eligibilityStatus = await getReferralStatus(client, appUser.id);
 
-    const referrals = await prisma.appUser.findMany({
+    const referrals = await client.appUser.findMany({
         where: { referredBy: appUser.id, isDeleted: false },
         select: {
             id: true,
@@ -160,12 +193,89 @@ const getMyReferral = async (user: IRequestUser) => {
         application: appUser.referralApplication,
         referrer: appUser.referrer,
         referrals,
+        referralCode: appUser.referralCode,
         eligibility: {
             approved: eligibilityStatus.approved,
             activeReferredCount: eligibilityStatus.activeReferredCount,
             eligible: eligibilityStatus.eligible,
         },
         referralIncomeEligible: appUser.referralIncomeEligible,
+    };
+};
+
+// Public registration prefill: reads the persisted system-wide default referral code so
+// the registration form can prefill when no referral URL is given. The setting module owns
+// the value and resolves eligibility using the same rules as registration.
+const getDefaultReferralCode = async (
+    client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<IDefaultReferralCode> => {
+    const setting = await SettingService.getDefaultReferralSetting(client);
+    return { referralCode: setting.referralCode };
+};
+
+// Read-only MVP tracking for an approved Referral Partner. Every user owns a
+// unique referral code (AppUser.referralCode); the partner view additionally
+// reports referral activity for that code.
+const getPartnerReferralDashboard = async (
+    user: IRequestUser,
+    client: Prisma.TransactionClient | typeof prisma = prisma,
+    now: Date = new Date(),
+): Promise<IPartnerReferralDashboard> => {
+    const appUser = await client.appUser.findUnique({
+        where: { authUserId: user.userId },
+        include: {
+            referralApplication: {
+                select: { status: true },
+            },
+        },
+    });
+
+    if (!appUser) {
+        throw new AppError(status.NOT_FOUND, "App user not found");
+    }
+
+    const application = appUser.referralApplication;
+
+    if (!application || application.status !== ReferralApplicationStatus.APPROVED) {
+        throw new AppError(
+            status.FORBIDDEN,
+            "Referral partner access requires an approved referral application.",
+        );
+    }
+
+    const referredAppUsers = await client.appUser.findMany({
+        where: { referredBy: appUser.id, isDeleted: false },
+        select: {
+            id: true,
+            authUserId: true,
+            createdAt: true,
+            authUser: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+    });
+
+    const activeAuthUserIds = await getQualifyingReferredAuthUserIds(
+        client,
+        referredAppUsers.map((referred) => referred.authUserId),
+        now,
+    );
+
+    const referrals = referredAppUsers.map((referred) => ({
+        id: referred.id,
+        name: referred.authUser.name,
+        email: referred.authUser.email,
+        joinedAt: referred.createdAt,
+        isActive: activeAuthUserIds.has(referred.authUserId),
+    }));
+
+    return {
+        referralCode: appUser.referralCode,
+        applicationStatus: application.status,
+        totalReferredCount: referrals.length,
+        activeReferredCount: referrals.filter((referral) => referral.isActive).length,
+        targetActiveReferrals: REFERRAL_MIN_ACTIVE_REFERRALS,
+        referralIncomeEligible: appUser.referralIncomeEligible,
+        referrals,
     };
 };
 
@@ -312,6 +422,8 @@ const reconcileAllReferralEligibility = async () => {
 export const ReferralService = {
     applyForReferralIncome,
     getMyReferral,
+    getDefaultReferralCode,
+    getPartnerReferralDashboard,
     getAllApplications,
     reviewApplication,
     recalculateReferrerEligibilityForOrder,

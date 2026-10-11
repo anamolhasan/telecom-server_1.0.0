@@ -7,6 +7,7 @@ export interface IRegisterAppUserPayload {
     name: string;
     email: string;
     password: string;
+    referralCode?: string;
 }
 
 export interface IChangePasswordPayload {
