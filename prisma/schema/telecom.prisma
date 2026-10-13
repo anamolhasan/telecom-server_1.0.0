@@ -24,7 +24,10 @@ model Product {
     description String?     @db.Text
     type        ProductType @default(RECHARGE)
     price       Float
+    // Agent (reseller) sales commission rate, in percent of the order total.
     commissionRate Float    @default(0)
+    // Referral commission rate for eligible referrers, in percent of the order total.
+    referralCommissionRate Float @default(0)
     isActive    Boolean     @default(true)
     isDeleted   Boolean     @default(false)
     deletedAt   DateTime?
@@ -41,14 +44,25 @@ model Product {
 
 model Order {
     id              String        @id @default(uuid(7))
+
+    // Buyer: the account that owns/pays the order.
     userId          String
-    user            User          @relation(fields: [userId], references: [id])
+    user            User          @relation("OrderBuyer", fields: [userId], references: [id])
+
+    // Seller: set only for an agent sale (userId != sellerId). Null means a
+    // personal purchase. Sales commission is paid to the seller, never to the buyer.
+    sellerId        String?
+    seller          User?         @relation("OrderSeller", fields: [sellerId], references: [id])
+
     productId       String
     product         Product       @relation(fields: [productId], references: [id])
     quantity        Int           @default(1)
     unitPrice       Float
     totalAmount     Float
+    // Agent sales commission (percent of totalAmount from Product.commissionRate).
     commissionAmount Float        @default(0)
+    // Referral commission for the buyer's referrer (percent of totalAmount from Product.referralCommissionRate).
+    referralCommissionAmount Float @default(0)
     status          OrderStatus   @default(PENDING)
     paymentStatus   PaymentStatus @default(PENDING)
     targetNumber    String?
@@ -64,6 +78,7 @@ model Order {
     walletTransactions WalletTransaction[]
 
     @@index([userId], name: "idx_order_userId")
+    @@index([sellerId], name: "idx_order_sellerId")
     @@index([productId], name: "idx_order_productId")
     @@index([status], name: "idx_order_status")
     @@index([status, completedAt], name: "idx_order_status_completedAt")

@@ -7,6 +7,7 @@ export interface ICreateProductPayload {
     type?: ProductType;
     price: number;
     commissionRate?: number;
+    referralCommissionRate?: number;
     isActive?: boolean;
 }
 

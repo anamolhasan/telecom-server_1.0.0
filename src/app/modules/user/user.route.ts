@@ -7,6 +7,12 @@ import { UserValidation } from "./user.validation";
 
 const router = Router();
 
+router.get(
+    "/stats",
+    checkAuth(...ROLE_MANAGEMENT_ACTORS),
+    UserController.getUserStats,
+);
+
 router.post(
     "/",
     checkAuth(...ROLE_MANAGEMENT_ACTORS),
@@ -34,5 +40,10 @@ router.patch(
     UserController.changeRole,
 );
 router.delete("/:id", checkAuth(...ROLE_MANAGEMENT_ACTORS), UserController.softDeleteUser);
+router.patch(
+    "/:id/restore",
+    checkAuth(...ROLE_MANAGEMENT_ACTORS),
+    UserController.restoreUser,
+);
 
 export const UserRoutes = router;

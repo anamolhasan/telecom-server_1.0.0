@@ -6,6 +6,7 @@ export const createOrderZodSchema = z.object({
     quantity: z.number().int().positive().optional(),
     targetNumber: z.string().optional(),
     note: z.string().optional(),
+    buyerId: z.string().min(1).optional(),
 });
 
 export const updateOrderStatusZodSchema = z.object({

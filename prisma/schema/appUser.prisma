@@ -12,6 +12,8 @@ model AppUser {
     country       String?
 
     // 💰 Agent / Earning System
+    // `canEarn` is the Agent badge / reseller-feature flag. It is derived from an
+    // APPROVED AgentApplication (see AgentApplication), never from the Role.
     canEarn     Boolean @default(false)
     balance     Float   @default(0)
     totalEarned Float   @default(0)

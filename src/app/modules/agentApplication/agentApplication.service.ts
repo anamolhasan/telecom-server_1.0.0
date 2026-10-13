@@ -18,16 +18,53 @@ const APPLICATION_STATUS_TRANSITIONS: Record<AgentApplicationStatus, AgentApplic
     [AgentApplicationStatus.REJECTED]: [],
 };
 
+type AgentClient = Prisma.TransactionClient | typeof prisma;
+
+// Agent eligibility derives from the application status only, exactly like the
+// Referral partner rule. It is independent from referral income eligibility: a
+// user may hold both an approved Agent application and an eligible referral.
+const getAgentStatus = async (
+    client: AgentClient,
+    appUserId: string,
+): Promise<{ approved: boolean; eligible: boolean }> => {
+    const application = await client.agentApplication.findUnique({
+        where: { appUserId },
+        select: { status: true },
+    });
+
+    const approved = application?.status === AgentApplicationStatus.APPROVED;
+
+    return { approved, eligible: approved };
+};
+
+// Persisted cache (AppUser.canEarn) so reseller/commission features can be read
+// cheaply; money decisions still re-derive from the application status instead
+// of trusting the role or a stale flag.
+const refreshAgentEarningCache = async (
+    client: AgentClient,
+    appUserId: string,
+): Promise<{ approved: boolean; eligible: boolean }> => {
+    const agentStatus = await getAgentStatus(client, appUserId);
+
+    await client.appUser.update({
+        where: { id: appUserId },
+        data: { canEarn: agentStatus.eligible },
+    });
+
+    return agentStatus;
+};
+
 const submitAgentApplication = async (
     user: IRequestUser,
     payload: ISubmitAgentApplicationPayload = {},
     client: Prisma.TransactionClient = prisma,
 ) => {
-    // Rule 8: only a logged-in USER may apply to become an AGENT.
+    // Only a logged-in customer may apply. Agent status is granted by approving
+    // this application, never by holding the USER role.
     if (user.role !== Role.USER) {
         throw new AppError(
             status.FORBIDDEN,
-            "Only USER accounts can apply to become an AGENT.",
+            "Only customer accounts can apply to become an agent.",
         );
     }
 
@@ -65,6 +102,9 @@ const submitAgentApplication = async (
     });
 };
 
+// Always returns the caller's application state (nullable) plus the derived
+// canEarn cache, so the UI can render apply / pending / rejected / approved
+// (Agent badge) states without a 404 for users who never applied.
 const getMyAgentApplication = async (user: IRequestUser) => {
     const appUser = await prisma.appUser.findUnique({
         where: { authUserId: user.userId },
@@ -81,11 +121,10 @@ const getMyAgentApplication = async (user: IRequestUser) => {
         },
     });
 
-    if (!application) {
-        throw new AppError(status.NOT_FOUND, "No agent application found for this account.");
-    }
-
-    return application;
+    return {
+        application,
+        canEarn: appUser.canEarn,
+    };
 };
 
 const getAllAgentApplications = async (query: IQueryParams) => {
@@ -121,7 +160,7 @@ const reviewAgentApplication = async (
     adminUser: IRequestUser,
     client: Prisma.TransactionClient = prisma,
 ) => {
-    // Rule 8: only ADMIN or SUPER_ADMIN may approve or reject. The route enforces this too.
+    // Only ADMIN or SUPER_ADMIN may approve or reject. The route enforces this too.
     if (adminUser.role !== Role.ADMIN && adminUser.role !== Role.SUPER_ADMIN) {
         throw new AppError(
             status.FORBIDDEN,
@@ -184,17 +223,10 @@ const reviewAgentApplication = async (
             },
         });
 
-        // Rule 8 + 9: approval promotes the account to AGENT and enables offer-sales commission.
-        if (payload.status === AgentApplicationStatus.APPROVED) {
-            await tx.user.update({
-                where: { id: application.appUser.authUserId },
-                data: { role: Role.AGENT },
-            });
-            await tx.appUser.update({
-                where: { id: application.appUserId },
-                data: { canEarn: true },
-            });
-        }
+        // Approval grants the Agent badge and reseller/commission features via
+        // the derived canEarn cache. The account keeps Role.USER: no role is
+        // ever changed here, and rejection keeps canEarn false.
+        await refreshAgentEarningCache(tx, application.appUserId);
 
         return updated;
     });
@@ -205,4 +237,6 @@ export const AgentApplicationService = {
     getMyAgentApplication,
     getAllAgentApplications,
     reviewAgentApplication,
+    getAgentStatus,
+    refreshAgentEarningCache,
 };

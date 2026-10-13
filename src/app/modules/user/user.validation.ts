@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { Role, UserStatus } from "../../../generated/prisma/enums";
 
-// AGENT is deliberately excluded: an AGENT is created by approving an Agent Application,
-// not by direct staff creation. SUPER_ADMIN is included so the (SUPER_ADMIN-only) endpoint
-// can mint accounts; the service layer enforces who may actually create each role.
+// Only staff roles are creatable here. Agent is not a role: an approved agent
+// keeps Role.USER and is granted access by approving an Agent Application.
+// SUPER_ADMIN is included so the (SUPER_ADMIN-only) endpoint can mint accounts;
+// the service layer enforces who may actually create each role.
 const CREATABLE_ROLE_VALUES: Role[] = [
     Role.SUPER_ADMIN,
     Role.ADMIN,

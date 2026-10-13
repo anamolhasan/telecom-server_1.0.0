@@ -8,6 +8,7 @@ export const createProductZodSchema = z.object({
     type: z.nativeEnum(ProductType).optional(),
     price: z.number().nonnegative("Price must be positive"),
     commissionRate: z.number().min(0).max(100).optional(),
+    referralCommissionRate: z.number().min(0).max(100).optional(),
     isActive: z.boolean().optional(),
 });
 
@@ -18,6 +19,7 @@ export const updateProductZodSchema = z.object({
     type: z.nativeEnum(ProductType).optional(),
     price: z.number().nonnegative().optional(),
     commissionRate: z.number().min(0).max(100).optional(),
+    referralCommissionRate: z.number().min(0).max(100).optional(),
     isActive: z.boolean().optional(),
 });
 

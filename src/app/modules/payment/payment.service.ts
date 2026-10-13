@@ -4,14 +4,10 @@ import { Prisma } from "../../../generated/prisma/client";
 import {
     OrderStatus,
     PaymentStatus,
-    ReferralApplicationStatus,
-    WalletTransactionReason,
-    WalletTransactionType,
 } from "../../../generated/prisma/enums";
-import { REFERRAL_REWARD_AMOUNT } from "../../constants/telecom.constant";
 import AppError from "../../errorHelpers/AppError";
 import { prisma } from "../../lib/prisma";
-import { applyWalletTransaction } from "../wallet/wallet.utils";
+import { CommissionService } from "../commission/commission.service";
 
 
 const markPaymentFailed = async (event: Stripe.Event, session: Stripe.Checkout.Session) => {
@@ -59,10 +55,7 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
             return;
         }
 
-        const order = await tx.order.findUnique({
-            where: { id: orderId },
-            include: { user: { include: { appUser: true } } },
-        });
+        const order = await tx.order.findUnique({ where: { id: orderId } });
 
         if (!order) {
             throw new AppError(status.NOT_FOUND, "Order not found");
@@ -80,54 +73,18 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
 
         await tx.order.update({
             where: { id: orderId },
-            data: { status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID },
+            data: {
+                // Never regress an order that has already moved past PENDING.
+                ...(order.status === OrderStatus.PENDING
+                    ? { status: OrderStatus.PROCESSING }
+                    : {}),
+                paymentStatus: PaymentStatus.PAID,
+            },
         });
 
-        const appUser = order.user.appUser;
-
-        if (appUser?.canEarn && order.commissionAmount > 0) {
-            await applyWalletTransaction(tx, {
-                userId: order.userId,
-                amount: order.commissionAmount,
-                type: WalletTransactionType.CREDIT,
-                reason: WalletTransactionReason.COMMISSION,
-                description: `Commission for order ${order.id}`,
-                orderId: order.id,
-            });
-        }
-
-        if (appUser?.referredBy) {
-            const previousPaidOrders = await tx.order.count({
-                where: {
-                    userId: order.userId,
-                    paymentStatus: PaymentStatus.PAID,
-                    id: { not: order.id },
-                },
-            });
-
-            if (previousPaidOrders === 0) {
-                const referrer = await tx.appUser.findUnique({
-                    where: { id: appUser.referredBy },
-                    include: {
-                        referralApplication: {
-                            select: { status: true },
-                        },
-                    },
-                });
-
-                // Referral tracking is open to every user, but income features are
-                // only available to approved referral partners.
-                if (referrer && referrer.referralApplication?.status === ReferralApplicationStatus.APPROVED) {
-                    await applyWalletTransaction(tx, {
-                        userId: referrer.authUserId,
-                        amount: REFERRAL_REWARD_AMOUNT,
-                        type: WalletTransactionType.CREDIT,
-                        reason: WalletTransactionReason.REFERRAL_INCOME,
-                        description: `Referral reward from user ${order.userId}`,
-                    });
-                }
-            }
-        }
+        // Awards only materialise once the order is both COMPLETED and PAID. This
+        // also covers the case where an order was completed before it was paid.
+        await CommissionService.settleOrderCommissions(tx, orderId);
     });
 
     return { message: "Payment completed successfully" };

@@ -22,7 +22,8 @@ model User {
     accounts Account[]
     appUser  AppUser?
 
-    orders               Order[]
+    orders               Order[]  @relation("OrderBuyer")
+    soldOrders           Order[]  @relation("OrderSeller")
     payments             Payment[]
     walletTransactions   WalletTransaction[]
     withdrawals          Withdrawal[] @relation("WithdrawalUser")

@@ -39,6 +39,17 @@ const getUserById = catchAsync(async (req: Request, res: Response) => {
     });
 });
 
+const getUserStats = catchAsync(async (_req: Request, res: Response) => {
+    const result = await UserService.getUserStats();
+
+    sendResponse(res, {
+        httpStatusCode: status.OK,
+        success: true,
+        message: "User statistics fetched successfully",
+        data: result,
+    });
+});
+
 const updateProfile = catchAsync(async (req: Request, res: Response) => {
     const result = await UserService.updateProfile(
         req.params.id as string,
@@ -95,12 +106,25 @@ const softDeleteUser = catchAsync(async (req: Request, res: Response) => {
     });
 });
 
+const restoreUser = catchAsync(async (req: Request, res: Response) => {
+    const result = await UserService.restoreUser(req.params.id as string, req.user!);
+
+    sendResponse(res, {
+        httpStatusCode: status.OK,
+        success: true,
+        message: "User restored successfully",
+        data: result,
+    });
+});
+
 export const UserController = {
     createStaffAccount,
     getUsers,
     getUserById,
+    getUserStats,
     updateProfile,
     updateStatus,
     changeRole,
     softDeleteUser,
+    restoreUser,
 };

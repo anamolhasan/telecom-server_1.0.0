@@ -22,6 +22,7 @@ const makeClient = (overrides: IClientOverrides = {}) => {
             findUnique: vi.fn().mockResolvedValue(overrides.target ?? null),
             count: vi.fn().mockResolvedValue(0),
             findMany: vi.fn().mockResolvedValue([]),
+            groupBy: vi.fn().mockResolvedValue([]),
             update: vi.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => ({
                 id: args.where.id,
                 ...args.data,
@@ -70,12 +71,12 @@ describe("createStaffAccount", () => {
         expect(signUpEmailMock).not.toHaveBeenCalled();
     });
 
-    it("rejects staff account creation by an AGENT", async () => {
+    it("rejects staff account creation by a non-role-manager (MODERATOR)", async () => {
         const tx = makeClient();
         await expect(
             UserService.createStaffAccount(
                 { name: "Supporter", email: "sup@x.com", password: "secret1", role: Role.SUPPORTER },
-                actor({ role: Role.AGENT }),
+                actor({ role: Role.MODERATOR }),
                 tx as unknown as Prisma.TransactionClient,
             ),
         ).rejects.toMatchObject({ statusCode: 403 });
@@ -220,11 +221,11 @@ describe("createStaffAccount", () => {
         );
     });
 
-    it("prevents directly creating an AGENT (AGENT comes from an Application approval, rule 8)", async () => {
+    it("prevents creating a customer account via the staff endpoint", async () => {
         const tx = makeClient();
         await expect(
             UserService.createStaffAccount(
-                { name: "Agent", email: "agent@x.com", password: "secret1", role: Role.AGENT },
+                { name: "Customer", email: "cust@x.com", password: "secret1", role: Role.USER },
                 actor(),
                 tx as unknown as Prisma.TransactionClient,
             ),
@@ -346,10 +347,10 @@ describe("createStaffUserZodSchema", () => {
         }
     });
 
-    it("rejects an AGENT role (AGENT comes from an application approval)", () => {
+    it("rejects a legacy AGENT role (agent status comes from an application approval)", () => {
         const parsed = UserValidation.createStaffUserZodSchema.safeParse({
             ...base,
-            role: Role.AGENT,
+            role: "AGENT",
         });
 
         expect(parsed.success).toBe(false);
@@ -437,6 +438,45 @@ describe("getUsers", () => {
         expect(findManyArgs.include as Record<string, unknown>).not.toHaveProperty("account");
         expect(result.data).toHaveLength(1);
         expect(result.meta.total).toBe(0);
+    });
+
+    it("lists only deleted users when isDeleted=true is requested", async () => {
+        const tx = makeClient();
+
+        await UserService.getUsers(
+            { page: "1", limit: "10", isDeleted: "true" },
+            tx as unknown as Prisma.TransactionClient,
+        );
+
+        const findManyArgs = tx.user.findMany.mock.calls[0][0] as Record<string, unknown>;
+        expect(findManyArgs.where).toEqual({ isDeleted: true });
+    });
+});
+
+describe("getUserStats", () => {
+    it("aggregates status and role counts from the database", async () => {
+        const tx = makeClient();
+        tx.user.groupBy
+            .mockResolvedValueOnce([
+                { status: "ACTIVE", _count: { _all: 5 } },
+                { status: "BLOCKED", _count: { _all: 2 } },
+            ] as never)
+            .mockResolvedValueOnce([
+                { role: Role.USER, _count: { _all: 6 } },
+                { role: Role.ADMIN, _count: { _all: 1 } },
+            ] as never);
+        tx.user.count.mockResolvedValue(3);
+
+        const stats = await UserService.getUserStats(
+            tx as unknown as Prisma.TransactionClient,
+        );
+
+        expect(stats.total).toBe(7);
+        expect(stats.active).toBe(5);
+        expect(stats.blocked).toBe(2);
+        expect(stats.deleted).toBe(3);
+        expect(stats.byRole[Role.USER]).toBe(6);
+        expect(stats.byRole[Role.SUPER_ADMIN]).toBe(0);
     });
 });
 
@@ -582,26 +622,21 @@ describe("changeRole", () => {
         expect(result).toMatchObject({ role: Role.MODERATOR });
     });
 
-    it("sets canEarn when promoting a USER to AGENT", async () => {
+    it("never touches canEarn when changing roles (agent status comes from approval)", async () => {
         const tx = makeClient();
         tx.user.findUnique
             .mockResolvedValueOnce({ id: "u1", role: Role.USER })
-            .mockResolvedValue({ id: "u1", role: Role.AGENT } as never);
+            .mockResolvedValue({ id: "u1", role: Role.MODERATOR } as never);
 
         const result = await UserService.changeRole(
             "u1",
-            { role: Role.AGENT },
+            { role: Role.MODERATOR },
             actor(),
             tx as unknown as Prisma.TransactionClient,
         );
 
-        expect(tx.appUser.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { authUserId: "u1" },
-                data: { canEarn: true },
-            }),
-        );
-        expect(result).toMatchObject({ role: Role.AGENT });
+        expect(tx.appUser.updateMany).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ role: Role.MODERATOR });
     });
 
     it("allows a SUPER_ADMIN to change another SUPER_ADMIN's role", async () => {
@@ -696,5 +731,62 @@ describe("softDeleteUser", () => {
         );
         expect(tx.session.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1" } });
         expect(result).toHaveProperty("deletedAt");
+    });
+});
+
+describe("restoreUser", () => {
+    it("rejects restoring a user that is not deleted", async () => {
+        const tx = makeClient({
+            target: { id: "u1", role: Role.USER, isDeleted: false } as never,
+        });
+
+        await expect(
+            UserService.restoreUser(
+                "u1",
+                actor(),
+                tx as unknown as Prisma.TransactionClient,
+            ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it("prevents an ADMIN from restoring a SUPER_ADMIN (rule 4)", async () => {
+        const tx = makeClient({
+            target: { id: "sa", role: Role.SUPER_ADMIN, isDeleted: true } as never,
+        });
+
+        await expect(
+            UserService.restoreUser(
+                "sa",
+                actor({ role: Role.ADMIN }),
+                tx as unknown as Prisma.TransactionClient,
+            ),
+        ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    it("restores the user and their app profile", async () => {
+        const tx = makeClient();
+        tx.user.findUnique
+            .mockResolvedValueOnce({ id: "u1", role: Role.USER, isDeleted: true } as never)
+            .mockResolvedValue({ id: "u1", role: Role.USER, status: "ACTIVE" } as never);
+
+        const result = await UserService.restoreUser(
+            "u1",
+            actor(),
+            tx as unknown as Prisma.TransactionClient,
+        );
+
+        expect(tx.user.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: "u1" },
+                data: expect.objectContaining({ isDeleted: false, status: "ACTIVE" }),
+            }),
+        );
+        expect(tx.appUser.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { authUserId: "u1" },
+                data: expect.objectContaining({ isDeleted: false }),
+            }),
+        );
+        expect(result).toMatchObject({ status: "ACTIVE" });
     });
 });

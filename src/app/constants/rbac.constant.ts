@@ -6,7 +6,6 @@ export const ALL_ROLES: Role[] = [
     Role.MODERATOR,
     Role.SUPPORTER,
     Role.EMPLOYEE,
-    Role.AGENT,
     Role.USER,
 ];
 
@@ -18,7 +17,9 @@ export const STAFF_ROLES: Role[] = [
     Role.EMPLOYEE,
 ];
 
-export const CUSTOMER_ROLES: Role[] = [Role.USER, Role.AGENT];
+// Agent is not a role: an approved agent is a USER granted the reseller feature
+// set via AppUser.canEarn. All customers therefore hold Role.USER.
+export const CUSTOMER_ROLES: Role[] = [Role.USER];
 
 export const ORDER_STAFF_ROLES: Role[] = STAFF_ROLES;
 
@@ -37,8 +38,9 @@ export const ROLE_MANAGEMENT_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
 
 export const AGENT_APPLICATION_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
 
-// Who may CREATE accounts with each role. AGENT accounts are deliberately excluded:
-// an AGENT is created by approving an Agent Application, not by direct staff creation.
+// Who may CREATE accounts with each role. Agent is not a creatable role: an
+// approved agent keeps Role.USER and is granted access by approving an Agent
+// Application, not by staff account creation or a role change.
 // Rule 2: only SUPER_ADMIN can create another SUPER_ADMIN.
 // Rule 5: SUPER_ADMIN creates SUPER_ADMIN/ADMIN/MODERATOR/SUPPORTER/EMPLOYEE.
 // Rule 6: ADMIN creates ADMIN/MODERATOR/SUPPORTER/EMPLOYEE (never a SUPER_ADMIN).
@@ -54,7 +56,6 @@ export const CREATABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
     [Role.MODERATOR]: [],
     [Role.SUPPORTER]: [],
     [Role.EMPLOYEE]: [],
-    [Role.AGENT]: [],
     [Role.USER]: [],
 };
 
@@ -62,20 +63,18 @@ export const CREATABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
 // Rule 1: SUPER_ADMIN and ADMIN manage all other roles except the restrictions below.
 // Rule 4: ADMIN can never manage a SUPER_ADMIN.
 // Note: ADMIN cannot manage another ADMIN (administrators are peers of each other);
-//       ADMIN does manage MODERATOR/SUPPORTER/EMPLOYEE plus customers (USER/AGENT).
+//       ADMIN does manage MODERATOR/SUPPORTER/EMPLOYEE plus customers (USER).
 export const MANAGEABLE_ROLES_BY_ROLE: Record<Role, Role[]> = {
     [Role.SUPER_ADMIN]: ALL_ROLES,
     [Role.ADMIN]: [
         Role.MODERATOR,
         Role.SUPPORTER,
         Role.EMPLOYEE,
-        Role.AGENT,
         Role.USER,
     ],
     [Role.MODERATOR]: [],
     [Role.SUPPORTER]: [],
     [Role.EMPLOYEE]: [],
-    [Role.AGENT]: [],
     [Role.USER]: [],
 };
 

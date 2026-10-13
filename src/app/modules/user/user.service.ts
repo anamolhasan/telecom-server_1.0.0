@@ -48,11 +48,26 @@ const userDetailSelect = {
             canEarn: true,
             balance: true,
             totalEarned: true,
+            referralIncomeEligible: true,
+            referralCode: true,
             referredBy: true,
+            lastLogin: true,
             isDeleted: true,
             deletedAt: true,
             createdAt: true,
             updatedAt: true,
+            referrer: {
+                select: {
+                    id: true,
+                    referralCode: true,
+                    authUser: {
+                        select: { id: true, name: true, email: true },
+                    },
+                },
+            },
+            _count: {
+                select: { referrals: true },
+            },
         },
     },
 } as const;
@@ -119,7 +134,7 @@ const createStaffAccount = async (
         await client.appUser.create({
             data: {
                 authUserId,
-                canEarn: payload.role === Role.AGENT,
+                canEarn: false,
                 profilePhoto: payload.profilePhoto,
                 contactNumber: payload.contactNumber,
                 referralCode: await generateUniqueReferralCode(client),
@@ -146,6 +161,11 @@ const getUsers = async (
     query: IQueryParams,
     client: UserModuleClient = prisma as unknown as UserModuleClient,
 ) => {
+    // The user directory hides soft-deleted accounts by default, but an explicit
+    // `isDeleted` filter lets role managers review deleted accounts and restore
+    // them. Any value other than "true" is treated as "not deleted".
+    const isDeleted = query.isDeleted === "true";
+
     const queryBuilder = new QueryBuilder<User>(
         client.user as unknown as PrismaModelDelegate,
         query,
@@ -158,12 +178,80 @@ const getUsers = async (
     return queryBuilder
         .search()
         .filter()
-        .where({ isDeleted: false })
-        .include({ appUser: true })
+        .where({ isDeleted })
+        .include({
+            appUser: {
+                include: {
+                    referrer: {
+                        select: {
+                            id: true,
+                            referralCode: true,
+                            authUser: {
+                                select: { id: true, name: true, email: true },
+                            },
+                        },
+                    },
+                    _count: { select: { referrals: true } },
+                },
+            },
+        })
         .sort()
         .paginate()
         .fields()
         .execute();
+};
+
+const getUserStats = async (
+    client: UserModuleClient = prisma as unknown as UserModuleClient,
+) => {
+    const [statusGroups, roleGroups, deleted] = await Promise.all([
+        client.user.groupBy({
+            by: ["status"],
+            where: { isDeleted: false },
+            _count: { _all: true },
+        }),
+        client.user.groupBy({
+            by: ["role"],
+            where: { isDeleted: false },
+            _count: { _all: true },
+        }),
+        client.user.count({ where: { isDeleted: true } }),
+    ]);
+
+    const byStatus = Object.values(UserStatus).reduce(
+        (accumulator, value) => ({ ...accumulator, [value]: 0 }),
+        {} as Record<UserStatus, number>,
+    );
+    for (const group of statusGroups) {
+        byStatus[group.status] = group._count._all;
+    }
+
+    const byRole = Object.values(Role).reduce(
+        (accumulator, value) => ({ ...accumulator, [value]: 0 }),
+        {} as Record<Role, number>,
+    );
+    for (const group of roleGroups) {
+        byRole[group.role] = group._count._all;
+    }
+
+    const total = Object.values(byStatus).reduce(
+        (sum, value) => sum + value,
+        0,
+    );
+
+    return {
+        total,
+        active: byStatus[UserStatus.ACTIVE],
+        pending: byStatus[UserStatus.PENDING],
+        suspended: byStatus[UserStatus.SUSPENDED],
+        blocked: byStatus[UserStatus.BLOCKED],
+        inactive: byStatus[UserStatus.INACTIVE],
+        sleeping: byStatus[UserStatus.SLEEPING],
+        verified: byStatus[UserStatus.VERIFIED],
+        deleted,
+        byStatus,
+        byRole,
+    };
 };
 
 const getUserById = async (
@@ -331,13 +419,6 @@ const changeRole = async (
             data: { role: payload.role },
         });
 
-        if (payload.role === Role.AGENT || target.role === Role.AGENT) {
-            await tx.appUser.updateMany({
-                where: { authUserId: id },
-                data: { canEarn: payload.role === Role.AGENT },
-            });
-        }
-
         return tx.user.findUnique({
             where: { id },
             select: userDetailSelect,
@@ -393,12 +474,64 @@ const softDeleteUser = async (
     return { id, deletedAt };
 };
 
+// Reverses a soft delete. The account, its app profile and the ability to sign
+// in again are restored. Sessions were revoked on delete and are intentionally
+// not recreated; the user signs in again normally.
+const restoreUser = async (
+    id: string,
+    actor: IRequestUser,
+    client: UserModuleClient = prisma as unknown as UserModuleClient,
+) => {
+    const target = await client.user.findUnique({
+        where: { id },
+        select: { id: true, role: true, isDeleted: true },
+    });
+
+    if (!target) {
+        throw new AppError(status.NOT_FOUND, "User not found.");
+    }
+
+    if (!target.isDeleted) {
+        throw new AppError(status.BAD_REQUEST, "This user is not deleted.");
+    }
+
+    if (
+        (target.role === Role.SUPER_ADMIN && actor.role !== Role.SUPER_ADMIN) ||
+        (target.role !== Role.SUPER_ADMIN && !canManageTarget(actor.role, target.role))
+    ) {
+        throw new AppError(
+            status.FORBIDDEN,
+            "You do not have permission to restore this user.",
+        );
+    }
+
+    await client.$transaction(async (tx) => {
+        await tx.user.update({
+            where: { id },
+            data: { isDeleted: false, deletedAt: null, status: UserStatus.ACTIVE },
+        });
+        await tx.appUser.updateMany({
+            where: { authUserId: id },
+            data: { isDeleted: false, deletedAt: null },
+        });
+    });
+
+    const restored = await client.user.findUnique({
+        where: { id },
+        select: userDetailSelect,
+    });
+
+    return restored;
+};
+
 export const UserService = {
     createStaffAccount,
     getUsers,
+    getUserStats,
     getUserById,
     updateProfile,
     updateStatus,
     changeRole,
     softDeleteUser,
+    restoreUser,
 };

@@ -43,23 +43,29 @@ interface IReviewOverrides {
 
 const makeReviewClient = (overrides: IReviewOverrides = {}) => {
     const authUserId = overrides.ownApplication ? "admin1" : "user1";
+    const application =
+        overrides.application === undefined
+            ? {
+                  id: "aa1",
+                  appUserId: "app1",
+                  status: AgentApplicationStatus.PENDING,
+                  appUser: { authUserId },
+              }
+            : overrides.application;
+
+    let storedStatus = application?.status;
+
     const tx = {
         agentApplication: {
-            findUnique: vi.fn().mockResolvedValue(
-                overrides.application === undefined
-                    ? {
-                          id: "aa1",
-                          appUserId: "app1",
-                          status: AgentApplicationStatus.PENDING,
-                          appUser: { authUserId },
-                      }
-                    : overrides.application,
-            ),
+            findUnique: vi.fn(async () => {
+                if (!application) return null;
+                return { ...application, status: storedStatus };
+            }),
             update: vi.fn(
-                async (args: { where: { id: string }; data: Record<string, unknown> }) => ({
-                    id: args.where.id,
-                    ...args.data,
-                }),
+                async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+                    storedStatus = args.data.status as AgentApplicationStatus;
+                    return { id: args.where.id, ...args.data };
+                },
             ),
         },
         appUser: {
@@ -77,14 +83,14 @@ const makeReviewClient = (overrides: IReviewOverrides = {}) => {
 const adminUser = { userId: "admin1", role: Role.ADMIN, email: "admin@x.com" };
 const superAdminUser = { userId: "sa1", role: Role.SUPER_ADMIN, email: "sa@x.com" };
 const userUser = { userId: "user1", role: Role.USER, email: "user@x.com" };
-const agentUser = { userId: "agent1", role: Role.AGENT, email: "agent@x.com" };
+const staffUser = { userId: "staff1", role: Role.EMPLOYEE, email: "staff@x.com" };
 
 afterEach(() => {
     vi.clearAllMocks();
 });
 
 describe("submitAgentApplication", () => {
-    it("allows a USER to submit an application (rule 8)", async () => {
+    it("allows a USER to submit an application", async () => {
         const { client, tx } = makeSubmitClient();
 
         const result = await AgentApplicationService.submitAgentApplication(
@@ -102,10 +108,10 @@ describe("submitAgentApplication", () => {
         );
     });
 
-    it("rejects a non-USER (e.g. AGENT) from applying", async () => {
+    it("rejects a staff (non-customer) account from applying", async () => {
         const { client } = makeSubmitClient();
         await expect(
-            AgentApplicationService.submitAgentApplication(agentUser, {}, client),
+            AgentApplicationService.submitAgentApplication(staffUser, {}, client),
         ).rejects.toMatchObject({ statusCode: 403 });
     });
 
@@ -142,7 +148,7 @@ describe("submitAgentApplication", () => {
 });
 
 describe("reviewAgentApplication", () => {
-    it("ADMIN approves and promotes the account to AGENT with canEarn (rules 8-9)", async () => {
+    it("ADMIN approves, grants canEarn and never changes the role", async () => {
         const { client, tx } = makeReviewClient();
 
         const result = await AgentApplicationService.reviewAgentApplication(
@@ -154,12 +160,7 @@ describe("reviewAgentApplication", () => {
 
         expect(result.status).toBe(AgentApplicationStatus.APPROVED);
         expect(result.reviewedById).toBe("admin1");
-        expect(tx.user.update).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: "user1" },
-                data: { role: Role.AGENT },
-            }),
-        );
+        expect(tx.user.update).not.toHaveBeenCalled();
         expect(tx.appUser.update).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: { id: "app1" },
@@ -168,7 +169,7 @@ describe("reviewAgentApplication", () => {
         );
     });
 
-    it("SUPER_ADMIN approves as well", async () => {
+    it("SUPER_ADMIN approves without a role change", async () => {
         const { client, tx } = makeReviewClient();
 
         const result = await AgentApplicationService.reviewAgentApplication(
@@ -179,7 +180,7 @@ describe("reviewAgentApplication", () => {
         );
 
         expect(result.status).toBe(AgentApplicationStatus.APPROVED);
-        expect(tx.user.update).toHaveBeenCalledTimes(1);
+        expect(tx.user.update).not.toHaveBeenCalled();
     });
 
     it("rejects reviewers who are neither ADMIN nor SUPER_ADMIN", async () => {
@@ -250,7 +251,7 @@ describe("reviewAgentApplication", () => {
         ).rejects.toThrow("Rejection reason is required");
     });
 
-    it("rejects with a reason and does not change the role", async () => {
+    it("rejects with a reason, clears canEarn and never changes the role", async () => {
         const { client, tx } = makeReviewClient();
 
         const result = await AgentApplicationService.reviewAgentApplication(
@@ -264,7 +265,12 @@ describe("reviewAgentApplication", () => {
         expect(result.rejectionReason).toBe("Did not meet criteria");
         expect(result.reviewedById).toBe("admin1");
         expect(tx.user.update).not.toHaveBeenCalled();
-        expect(tx.appUser.update).not.toHaveBeenCalled();
+        expect(tx.appUser.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: "app1" },
+                data: { canEarn: false },
+            }),
+        );
     });
 
     it("returns NOT_FOUND for an unknown application", async () => {

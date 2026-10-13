@@ -10,6 +10,7 @@ import { IQueryParams, PrismaModelDelegate } from "../../interfaces/query.interf
 import { IRequestUser } from "../../interfaces/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { QueryBuilder } from "../../utils/QueryBuilder";
+import { CommissionService } from "../commission/commission.service";
 import { ReferralService } from "../referral/referral.service";
 import { ICreateOrderPayload } from "./order.interface";
 
@@ -32,19 +33,53 @@ const createOrder = async (payload: ICreateOrderPayload, user: IRequestUser) => 
         throw new AppError(status.NOT_FOUND, "Product not found or not available");
     }
 
+    // The buyer defaults to the acting user (personal purchase). A distinct buyer
+    // makes the acting user the seller, which requires agent (canEarn) rights.
+    const buyerId = payload.buyerId?.trim() || user.userId;
+    let sellerId: string | null = null;
+
+    if (buyerId !== user.userId) {
+        const seller = await prisma.appUser.findUnique({
+            where: { authUserId: user.userId },
+            select: { canEarn: true },
+        });
+
+        if (!seller?.canEarn) {
+            throw new AppError(
+                status.FORBIDDEN,
+                "Only authorized agents can sell offers to other users",
+            );
+        }
+
+        const buyer = await prisma.user.findFirst({
+            where: { id: buyerId, isDeleted: false },
+            select: { id: true },
+        });
+
+        if (!buyer) {
+            throw new AppError(status.NOT_FOUND, "Buyer not found");
+        }
+
+        sellerId = user.userId;
+    }
+
     const quantity = payload.quantity ?? 1;
     const unitPrice = product.price;
     const totalAmount = unitPrice * quantity;
+    // Commission amounts are always derived server-side from the product rates.
     const commissionAmount = (totalAmount * product.commissionRate) / 100;
+    const referralCommissionAmount = (totalAmount * product.referralCommissionRate) / 100;
 
     return prisma.order.create({
         data: {
-            userId: user.userId,
+            userId: buyerId,
+            sellerId,
             productId: product.id,
             quantity,
             unitPrice,
             totalAmount,
             commissionAmount,
+            referralCommissionAmount,
             targetNumber: payload.targetNumber,
             note: payload.note,
             status: OrderStatus.PENDING,
@@ -55,7 +90,10 @@ const createOrder = async (payload: ICreateOrderPayload, user: IRequestUser) => 
 
 const initiatePayment = async (orderId: string, user: IRequestUser) => {
     const order = await prisma.order.findFirst({
-        where: { id: orderId, userId: user.userId },
+        where: {
+            id: orderId,
+            OR: [{ userId: user.userId }, { sellerId: user.userId }],
+        },
         include: { product: { include: { operator: true } }, payment: true },
     });
 
@@ -77,7 +115,7 @@ const initiatePayment = async (orderId: string, user: IRequestUser) => {
         payment = await prisma.payment.create({
             data: {
                 orderId: order.id,
-                userId: user.userId,
+                userId: order.userId,
                 amount: order.totalAmount,
                 currency: DEFAULT_CURRENCY,
                 transactionId: uuidv7(),
@@ -132,7 +170,7 @@ const getMyOrders = async (user: IRequestUser, query: IQueryParams) => {
 
     return queryBuilder
         .filter()
-        .where({ userId: user.userId })
+        .where({ OR: [{ userId: user.userId }, { sellerId: user.userId }] })
         .include({ product: { include: { operator: true } } })
         .sort()
         .paginate()
@@ -142,7 +180,10 @@ const getMyOrders = async (user: IRequestUser, query: IQueryParams) => {
 
 const getMyOrder = async (orderId: string, user: IRequestUser) => {
     const order = await prisma.order.findFirst({
-        where: { id: orderId, userId: user.userId },
+        where: {
+            id: orderId,
+            OR: [{ userId: user.userId }, { sellerId: user.userId }],
+        },
         include: { product: { include: { operator: true } }, payment: true },
     });
 
@@ -199,6 +240,17 @@ const changeOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
                     : {}),
             },
         });
+
+        if (nextStatus === OrderStatus.COMPLETED) {
+            // Commissions are awarded only for a successful (COMPLETED + PAID) order.
+            await CommissionService.settleOrderCommissions(tx, orderId);
+        } else if (
+            nextStatus === OrderStatus.CANCELLED ||
+            nextStatus === OrderStatus.FAILED
+        ) {
+            // Undo any commission if the order never reaches success.
+            await CommissionService.revokeOrderCommissions(tx, orderId);
+        }
 
         // Recapture referrer eligibility whenever an order's qualification status changes
         // (completion makes a referred account active; cancellation/failure removes it).

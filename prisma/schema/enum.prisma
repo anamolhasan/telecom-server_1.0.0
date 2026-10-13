@@ -1,10 +1,11 @@
+// Agent is NOT a role. An approved agent keeps Role.USER and is granted the
+// agent feature set through AppUser.canEarn + AgentApplication.status instead.
 enum Role {
   SUPER_ADMIN
   ADMIN
   MODERATOR
   SUPPORTER
   EMPLOYEE
-  AGENT
   USER
 }
 
