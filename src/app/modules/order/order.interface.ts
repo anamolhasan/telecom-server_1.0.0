@@ -1,5 +1,5 @@
 export interface ICreateOrderPayload {
-    productId: string;
+    operatorOfferId: string;
     quantity?: number;
     targetNumber?: string;
     note?: string;

@@ -3,8 +3,9 @@ import { AgentApplicationRoutes } from "../modules/agentApplication/agentApplica
 import { AuthRoutes } from "../modules/auth/auth.route";
 import { OperatorRoutes } from "../modules/operator/operator.route";
 import { OrderRoutes } from "../modules/order/order.route";
-import { ProductRoutes } from "../modules/product/product.route";
+import { OperatorOfferRoutes } from "../modules/operatorOffer/operatorOffer.route";
 import { ReferralRoutes } from "../modules/referral/referral.route";
+import { RoleAccessRoutes } from "../modules/roleAccess/roleAccess.route";
 import { SettingRoutes } from "../modules/setting/setting.route";
 import { SpecialtyRoutes } from "../modules/specialty/specialty.route";
 import { UserRoutes } from "../modules/user/user.route";
@@ -18,10 +19,11 @@ router.use('/auth', AuthRoutes)
 router.use('/agent-applications', AgentApplicationRoutes)
 router.use('/specialties', SpecialtyRoutes)
 router.use('/operators', OperatorRoutes)
-router.use('/products', ProductRoutes)
+router.use('/operator-offers', OperatorOfferRoutes)
 router.use('/orders', OrderRoutes)
 router.use('/referral', ReferralRoutes)
 router.use('/settings', SettingRoutes)
+router.use('/role-access', RoleAccessRoutes)
 router.use('/users', UserRoutes)
 router.use('/wallet', WalletRoutes)
 router.use('/withdrawals', WithdrawalRoutes)

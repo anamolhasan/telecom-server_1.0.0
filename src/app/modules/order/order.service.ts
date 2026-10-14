@@ -25,12 +25,12 @@ const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 };
 
 const createOrder = async (payload: ICreateOrderPayload, user: IRequestUser) => {
-    const product = await prisma.product.findFirst({
-        where: { id: payload.productId, isDeleted: false, isActive: true },
+    const operatorOffer = await prisma.operatorOffer.findFirst({
+        where: { id: payload.operatorOfferId, isDeleted: false, isActive: true },
     });
 
-    if (!product) {
-        throw new AppError(status.NOT_FOUND, "Product not found or not available");
+    if (!operatorOffer) {
+        throw new AppError(status.NOT_FOUND, "Offer not found or not available");
     }
 
     // The buyer defaults to the acting user (personal purchase). A distinct buyer
@@ -64,17 +64,17 @@ const createOrder = async (payload: ICreateOrderPayload, user: IRequestUser) => 
     }
 
     const quantity = payload.quantity ?? 1;
-    const unitPrice = product.price;
+    const unitPrice = operatorOffer.price;
     const totalAmount = unitPrice * quantity;
-    // Commission amounts are always derived server-side from the product rates.
-    const commissionAmount = (totalAmount * product.commissionRate) / 100;
-    const referralCommissionAmount = (totalAmount * product.referralCommissionRate) / 100;
+    // Commission amounts are always derived server-side from the offer rates.
+    const commissionAmount = (totalAmount * operatorOffer.commissionRate) / 100;
+    const referralCommissionAmount = (totalAmount * operatorOffer.referralCommissionRate) / 100;
 
     return prisma.order.create({
         data: {
             userId: buyerId,
             sellerId,
-            productId: product.id,
+            operatorOfferId: operatorOffer.id,
             quantity,
             unitPrice,
             totalAmount,
@@ -94,7 +94,7 @@ const initiatePayment = async (orderId: string, user: IRequestUser) => {
             id: orderId,
             OR: [{ userId: user.userId }, { sellerId: user.userId }],
         },
-        include: { product: { include: { operator: true } }, payment: true },
+        include: { operatorOffer: { include: { operator: true } }, payment: true },
     });
 
     if (!order) {
@@ -131,7 +131,7 @@ const initiatePayment = async (orderId: string, user: IRequestUser) => {
                 price_data: {
                     currency: DEFAULT_CURRENCY,
                     product_data: {
-                        name: `${order.product.operator.name} - ${order.product.name}`,
+                        name: `${order.operatorOffer.operator.name} - ${order.operatorOffer.name}`,
                     },
                     unit_amount: Math.round(order.unitPrice * 100),
                 },
@@ -164,14 +164,14 @@ const getMyOrders = async (user: IRequestUser, query: IQueryParams) => {
         query,
         {
             searchableFields: ["targetNumber"],
-            filterableFields: ["status", "paymentStatus", "productId"],
+            filterableFields: ["status", "paymentStatus", "operatorOfferId"],
         },
     );
 
     return queryBuilder
         .filter()
         .where({ OR: [{ userId: user.userId }, { sellerId: user.userId }] })
-        .include({ product: { include: { operator: true } } })
+        .include({ operatorOffer: { include: { operator: true } } })
         .sort()
         .paginate()
         .fields()
@@ -184,7 +184,7 @@ const getMyOrder = async (orderId: string, user: IRequestUser) => {
             id: orderId,
             OR: [{ userId: user.userId }, { sellerId: user.userId }],
         },
-        include: { product: { include: { operator: true } }, payment: true },
+        include: { operatorOffer: { include: { operator: true } }, payment: true },
     });
 
     if (!order) {
@@ -200,14 +200,14 @@ const getAllOrders = async (query: IQueryParams) => {
         query,
         {
             searchableFields: ["id", "targetNumber", "user.name", "user.email"],
-            filterableFields: ["status", "paymentStatus", "userId", "productId"],
+            filterableFields: ["status", "paymentStatus", "userId", "operatorOfferId"],
         },
     );
 
     return queryBuilder
         .search()
         .filter()
-        .include({ product: { include: { operator: true } }, payment: true })
+        .include({ operatorOffer: { include: { operator: true } }, payment: true })
         .sort()
         .paginate()
         .fields()

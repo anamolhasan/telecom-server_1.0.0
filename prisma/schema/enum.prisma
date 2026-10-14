@@ -42,12 +42,74 @@ enum PaymentStatus {
   CANCELLED
 }
 
+// Legacy product classification retained on OperatorOffer (see `type`). Kept for
+// backward compatibility with existing rows, orders and the operator-offer `type`
+// filter; new authoring uses the richer OperatorOfferType below.
 enum ProductType {
   RECHARGE
   BUNDLE
   MINUTE
   INTERNET
   OTHER
+}
+
+// Offers associated with telecom operators. Global Offers will be a separate,
+// later feature and deliberately do not reuse these names.
+enum OperatorOfferType {
+  MB
+  MINUTE
+  SMS
+  BUNDLE
+  COMBO
+  OTHER
+}
+
+enum OperatorOfferAmountUnit {
+  MB
+  GB
+  MINUTE
+  HOUR
+  SMS
+  PCS
+}
+
+enum OperatorOfferValidityUnit {
+  HOURS
+  DAYS
+  WEEKS
+  MONTHS
+}
+
+enum OperatorOfferDiscountType {
+  NONE
+  FIXED
+  PERCENTAGE
+}
+
+enum OperatorOfferCommissionType {
+  FIXED
+  PERCENTAGE
+}
+
+enum OperatorOfferInventoryMode {
+  LIMITED
+  UNLIMITED
+}
+
+enum OperatorOfferBadge {
+  NEW
+  POPULAR
+  BEST_VALUE
+  LIMITED_TIME
+}
+
+enum OperatorOfferStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  EXPIRED
+  OUT_OF_STOCK
 }
 
 enum WalletTransactionType {

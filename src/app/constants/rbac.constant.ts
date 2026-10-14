@@ -97,3 +97,106 @@ export const canChangeRole = (
     // via role change), and may only touch roles within its management scope.
     return canManageTarget(actorRole, targetRole) && canManageTarget(actorRole, newRole);
 };
+
+// Role Access Management (the global permission policy) is owned exclusively by
+// the system owner. ADMIN keeps its operational capabilities (see the create /
+// manage / change-role rules above) but can never read or change global role
+// permissions. AGENT is intentionally absent: it is a feature audience granted
+// via AppUser.canEarn, never a Role.
+export const ROLE_ACCESS_MANAGERS: Role[] = [Role.SUPER_ADMIN];
+
+// Canonical permission identifiers used by the Role Access policy. These are the
+// single source of truth the server serves and, in a later step, enforces. They
+// intentionally reuse the identifiers exposed by the frontend Role Access page.
+export const PERMISSIONS = [
+    "users.read",
+    "users.update",
+    "users.block",
+    "users.delete",
+    "roles.manage",
+    "role_permissions.manage",
+    "offers.manage",
+    "orders.manage",
+    "wallet.read",
+    "wallet.adjust",
+    "withdrawals.review",
+    "commissions.manage",
+    "audit_logs.read",
+] as const;
+
+export type Permission = (typeof PERMISSIONS)[number];
+
+// ALLOWED / LIMITED / DENIED mirrors the frontend matrix. LIMITED means the actor
+// may perform the operation only within a narrower, scope-checked boundary (the
+// existing service-layer rules), and is therefore never treated as a blanket grant.
+export type PermissionState = "ALLOWED" | "LIMITED" | "DENIED";
+
+// The proposed/target role-permission policy. Only granted states are listed;
+// any pair that is absent is denied (see getPermissionState). Kept deliberately
+// aligned with the existing create/manage/change-role rules above.
+export const ROLE_PERMISSIONS: Record<
+    Role,
+    Partial<Record<Permission, PermissionState>>
+> = {
+    [Role.SUPER_ADMIN]: {
+        "users.read": "ALLOWED",
+        "users.update": "ALLOWED",
+        "users.block": "ALLOWED",
+        "users.delete": "ALLOWED",
+        "roles.manage": "ALLOWED",
+        "role_permissions.manage": "ALLOWED",
+        "offers.manage": "ALLOWED",
+        "orders.manage": "ALLOWED",
+        "wallet.read": "ALLOWED",
+        "wallet.adjust": "ALLOWED",
+        "withdrawals.review": "ALLOWED",
+        "commissions.manage": "ALLOWED",
+        "audit_logs.read": "ALLOWED",
+    },
+    [Role.ADMIN]: {
+        "users.read": "ALLOWED",
+        "users.update": "ALLOWED",
+        "users.block": "ALLOWED",
+        "users.delete": "LIMITED",
+        "roles.manage": "LIMITED",
+        "offers.manage": "ALLOWED",
+        "orders.manage": "ALLOWED",
+        "wallet.read": "ALLOWED",
+        "wallet.adjust": "ALLOWED",
+        "withdrawals.review": "ALLOWED",
+        "commissions.manage": "LIMITED",
+    },
+    [Role.MODERATOR]: {
+        "users.read": "ALLOWED",
+        "users.block": "ALLOWED",
+        "orders.manage": "ALLOWED",
+    },
+    [Role.SUPPORTER]: {
+        "users.read": "ALLOWED",
+        "users.block": "LIMITED",
+        "orders.manage": "LIMITED",
+        "wallet.read": "LIMITED",
+        "withdrawals.review": "LIMITED",
+    },
+    [Role.EMPLOYEE]: {
+        "users.read": "LIMITED",
+        "orders.manage": "LIMITED",
+        "wallet.read": "LIMITED",
+        "withdrawals.review": "LIMITED",
+    },
+    [Role.USER]: {
+        "orders.manage": "LIMITED",
+        "wallet.read": "LIMITED",
+    },
+};
+
+// Default-deny: any role/permission pair that is not explicitly granted is denied.
+export const getPermissionState = (
+    role: Role,
+    permission: Permission,
+): PermissionState => ROLE_PERMISSIONS[role]?.[permission] ?? "DENIED";
+
+// Authorization helper: only an explicit ALLOWED state counts as a grant. LIMITED
+// operations must still pass their own scope checks in the service layer.
+export const can = (role: Role, permission: Permission): boolean =>
+    getPermissionState(role, permission) === "ALLOWED";

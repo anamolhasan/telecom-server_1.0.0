@@ -10,36 +10,74 @@ model Operator {
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
-    products Product[]
+    operatorOffers OperatorOffer[]
 
     @@index([isDeleted], name: "idx_operator_isDeleted")
     @@map("operators")
 }
 
-model Product {
-    id          String      @id @default(uuid(7))
+// An offer published by a telecom operator. Previously named `Product`; the
+// physical table is `operators_offers` (non-destructively renamed from
+// `products`). OperatorOffer models operator-scoped offers only; a future
+// Global Offers feature will be separate.
+model OperatorOffer {
+    id          String              @id @default(uuid(7))
     operatorId  String
-    operator    Operator    @relation(fields: [operatorId], references: [id])
-    name        String      @db.VarChar(150)
-    description String?     @db.Text
-    type        ProductType @default(RECHARGE)
-    price       Float
-    // Agent (reseller) sales commission rate, in percent of the order total.
-    commissionRate Float    @default(0)
-    // Referral commission rate for eligible referrers, in percent of the order total.
-    referralCommissionRate Float @default(0)
-    isActive    Boolean     @default(true)
-    isDeleted   Boolean     @default(false)
-    deletedAt   DateTime?
+    operator    Operator            @relation(fields: [operatorId], references: [id])
+    // Offer title / display name.
+    name        String              @db.VarChar(150)
+    description String?             @db.Text
+    // Rich offer type used by authoring; `type` mirrors it as a ProductType for
+    // backward compatibility with the legacy product classification.
+    offerType   OperatorOfferType   @default(OTHER)
+    type        ProductType         @default(RECHARGE)
+    // Package quantity and unit (e.g. 5 GB).
+    amount      Int?
+    amountUnit  OperatorOfferAmountUnit?
+    // Validity period (e.g. 30 days).
+    validityValue Int?
+    validityUnit  OperatorOfferValidityUnit?
+    // Regular (list) price before discount, plus the effective selling price that
+    // orders use. Money is stored as Decimal.
+    regularPrice Decimal             @default(0) @db.Decimal(12, 2)
+    price        Float               @default(0)
+    // Discount configuration.
+    discountType  OperatorOfferDiscountType @default(NONE)
+    discountValue Decimal            @default(0) @db.Decimal(12, 2)
+    // Company purchase (cost) price.
+    companyPurchasePrice Decimal      @default(0) @db.Decimal(12, 2)
+    // Reseller (agent) commission configuration.
+    resellerCommissionType  OperatorOfferCommissionType @default(FIXED)
+    resellerCommissionValue Decimal         @default(0) @db.Decimal(12, 2)
+    // Buyer-agent commission configuration.
+    agentCommissionType  OperatorOfferCommissionType @default(FIXED)
+    agentCommissionValue Decimal          @default(0) @db.Decimal(12, 2)
+    // Derived percentage rates consumed by the order/commission flow.
+    commissionRate Float             @default(0)
+    referralCommissionRate Float     @default(0)
+    // Inventory.
+    inventoryMode OperatorOfferInventoryMode @default(UNLIMITED)
+    stockQuantity Int?
+    badges        OperatorOfferBadge[]       @default([])
+    // Scheduling (stored in UTC).
+    startsAt DateTime?
+    endsAt   DateTime?
+    // Administrative status.
+    status   OperatorOfferStatus @default(DRAFT)
+    isActive Boolean             @default(true)
+    isDeleted Boolean            @default(false)
+    deletedAt DateTime?
 
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
     orders Order[]
 
-    @@index([operatorId], name: "idx_product_operatorId")
-    @@index([isDeleted], name: "idx_product_isDeleted")
-    @@map("products")
+    @@index([operatorId], name: "idx_operatorOffer_operatorId")
+    @@index([offerType], name: "idx_operatorOffer_offerType")
+    @@index([status], name: "idx_operatorOffer_status")
+    @@index([isDeleted], name: "idx_operatorOffer_isDeleted")
+    @@map("operators_offers")
 }
 
 model Order {
@@ -54,8 +92,8 @@ model Order {
     sellerId        String?
     seller          User?         @relation("OrderSeller", fields: [sellerId], references: [id])
 
-    productId       String
-    product         Product       @relation(fields: [productId], references: [id])
+    operatorOfferId String
+    operatorOffer   OperatorOffer @relation(fields: [operatorOfferId], references: [id])
     quantity        Int           @default(1)
     unitPrice       Float
     totalAmount     Float
@@ -79,7 +117,7 @@ model Order {
 
     @@index([userId], name: "idx_order_userId")
     @@index([sellerId], name: "idx_order_sellerId")
-    @@index([productId], name: "idx_order_productId")
+    @@index([operatorOfferId], name: "idx_order_operatorOfferId")
     @@index([status], name: "idx_order_status")
     @@index([status, completedAt], name: "idx_order_status_completedAt")
     @@map("orders")

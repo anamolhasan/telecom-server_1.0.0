@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OrderStatus } from "../../../generated/prisma/enums";
 
 export const createOrderZodSchema = z.object({
-    productId: z.string().min(1, "Product is required"),
+    operatorOfferId: z.string().min(1, "Offer is required"),
     quantity: z.number().int().positive().optional(),
     targetNumber: z.string().optional(),
     note: z.string().optional(),
