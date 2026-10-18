@@ -34,6 +34,10 @@ interface EnvConfig {
     CLOUDINARY_API_KEY:string;
     CLOUDINARY_API_SECRET:string;
   },
+  // Active storage backend for file uploads. Optional: defaults to "cloudinary".
+  // Kept out of the required list so existing deployments keep booting unchanged;
+  // future S3/R2 providers will read this same value.
+  UPLOAD_PROVIDER: string;
   STRIPE:{
     STRIPE_SECRET_KEY:string;
     STRIPE_WEBHOOK_SECRET:string;
@@ -117,6 +121,7 @@ const loadEnvVariables = (): EnvConfig => {
       CLOUDINARY_API_KEY:env.CLOUDINARY_API_KEY as string,
       CLOUDINARY_API_SECRET:env.CLOUDINARY_API_SECRET as string,
     },
+    UPLOAD_PROVIDER:(env.UPLOAD_PROVIDER as string) || "cloudinary",
     STRIPE:{
       STRIPE_SECRET_KEY:env.STRIPE_SECRET_KEY as string,
       STRIPE_WEBHOOK_SECRET:env.STRIPE_WEBHOOK_SECRET as string

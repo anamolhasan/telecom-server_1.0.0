@@ -1,0 +1,63 @@
+// A sellable SKU of a Product.
+//
+// 💰 Money precision decision: every new e-commerce monetary field is
+// Decimal(12, 2) — 12 significant digits with 2 decimal places (paisa). That
+// allows up to 9,999,999,999.99 BDT (≈ 10 billion), which comfortably covers BDT
+// consumer pricing while keeping exact 2-decimal arithmetic. This deliberately
+// matches the precision already used by OperatorOffer (telecom.prisma) rather
+// than introducing a second money scale. Existing Float money fields in the
+// Telecom/Payment models are intentionally left untouched by this task.
+//
+// `attributes` is JSONB so option dimensions (size, color, storage, …) can grow
+// without a migration; `name` is the human-readable label for the option combo.
+model ProductVariant {
+  id        String  @id @default(uuid(7))
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku        String  @unique @db.VarChar(100)
+  name       String? @db.VarChar(200)
+  attributes Json?
+
+  price          Decimal  @db.Decimal(12, 2)
+  compareAtPrice Decimal? @db.Decimal(12, 2)
+
+  isActive  Boolean   @default(true)
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventory  Inventory?
+  cartItems  CartItem[]
+  orderItems ProductOrderItem[]
+
+  commissionRules CommissionRule[] @relation("CommissionRuleVariant")
+
+  @@index([productId], name: "idx_product_variant_productId")
+  @@index([isDeleted], name: "idx_product_variant_isDeleted")
+  @@map("product_variants")
+}
+
+// Stock keeping for a variant.
+//
+// One row per variant in the MVP: the unique `variantId` makes that impossible
+// to violate and keeps stock updates atomic, e.g.
+//   UPDATE inventories SET "availableQuantity" = "availableQuantity" - $n ...
+// `availableQuantity` is the unreserved, sellable quantity. Stock is decremented
+// when an order is placed, never when an item is added to a cart, so carts do
+// not reserve inventory.
+model Inventory {
+  id        String         @id @default(uuid(7))
+  variantId String         @unique
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  availableQuantity Int  @default(0)
+  lowStockThreshold Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inventories")
+}

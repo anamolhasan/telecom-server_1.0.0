@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma } from "../../../generated/prisma/client";
 import {
+    EarningStatus,
     OrderStatus,
     PaymentStatus,
     ReferralApplicationStatus,
@@ -23,21 +24,25 @@ const makeOrder = (overrides: IOrderOverrides = {}) => ({
     id: "order-1",
     userId: "buyer-1",
     sellerId: overrides.sellerId ?? null,
+    operatorOfferId: "offer-1",
+    totalAmount: 1_000,
     commissionAmount: overrides.commissionAmount ?? 100,
     referralCommissionAmount: overrides.referralCommissionAmount ?? 10,
     status: overrides.status ?? OrderStatus.COMPLETED,
     paymentStatus: overrides.paymentStatus ?? PaymentStatus.PAID,
+    operatorOffer: { commissionRate: 10, referralCommissionRate: 1 },
     user: {
         appUser: { id: "buyerApp", referredBy: overrides.referredBy ?? null },
     },
     seller: overrides.sellerId
-        ? { appUser: { canEarn: overrides.sellerCanEarn ?? true } }
+        ? { appUser: { id: "sellerApp", canEarn: overrides.sellerCanEarn ?? true } }
         : null,
 });
 
 interface ISettleOptions {
     existingCommission?: unknown;
     existingReferral?: unknown;
+    existingEarning?: unknown;
     referralApproved?: boolean;
 }
 
@@ -45,6 +50,16 @@ const makeSettleTx = (
     order: ReturnType<typeof makeOrder>,
     options: ISettleOptions = {},
 ) => {
+    const earningsById = new Map<string, Record<string, unknown>>();
+    const earningsByKey = new Map<string, Record<string, unknown>>();
+    let earningCounter = 0;
+
+    if (options.existingEarning) {
+        const seeded = options.existingEarning as Record<string, unknown>;
+        earningsById.set(seeded.id as string, seeded);
+        earningsByKey.set(seeded.idempotencyKey as string, seeded);
+    }
+
     const tx = {
         order: {
             findUnique: vi.fn().mockResolvedValue(order),
@@ -71,6 +86,42 @@ const makeSettleTx = (
                 ...args.data,
             })),
         },
+        // The shared earning ledger: the database-unique idempotency key is what
+        // prevents a double credit of the agent commission.
+        earningTransaction: {
+            findUnique: vi.fn(async (args: { where: Record<string, string> }) => {
+                if (args.where.idempotencyKey) {
+                    return earningsByKey.get(args.where.idempotencyKey) ?? null;
+                }
+                return earningsById.get(args.where.id) ?? null;
+            }),
+            create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+                const row: Record<string, unknown> = { ...args.data };
+                row.id = `e-${(earningCounter += 1)}`;
+                earningsById.set(row.id as string, row);
+                earningsByKey.set(row.idempotencyKey as string, row);
+                return row;
+            }),
+            updateMany: vi.fn(
+                async (args: {
+                    where: Record<string, unknown>;
+                    data: Record<string, unknown>;
+                }) => {
+                    const row = earningsById.get(args.where.id as string);
+                    if (!row || row.status !== args.where.status) {
+                        return { count: 0 };
+                    }
+                    Object.assign(row, args.data);
+                    return { count: 1 };
+                },
+            ),
+            findUniqueOrThrow: vi.fn(async (args: { where: { id: string } }) => {
+                const row = earningsById.get(args.where.id);
+                if (!row) throw new Error("earning not found");
+                return row;
+            }),
+            findMany: vi.fn(async () => [] as Record<string, unknown>[]),
+        },
         appUser: {
             findUniqueOrThrow: vi.fn(async (args: { where: { authUserId?: string; id?: string } }) => {
                 const key = args.where.authUserId ?? args.where.id;
@@ -90,6 +141,22 @@ const makeSettleTx = (
                     ? ReferralApplicationStatus.PENDING
                     : ReferralApplicationStatus.APPROVED,
             }),
+        },
+        // The one-time milestone is evaluated on every successful referred
+        // purchase. An unconfigured reward amount means no reward is issued.
+        referralMilestoneReward: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
+                id: "milestone-1",
+                ...args.data,
+            })),
+            update: vi.fn(async (args: { data: Record<string, unknown> }) => ({
+                id: "milestone-1",
+                ...args.data,
+            })),
+        },
+        systemSetting: {
+            findUnique: vi.fn().mockResolvedValue(null),
         },
     };
 
@@ -186,9 +253,17 @@ describe("settleOrderCommissions", () => {
     });
 
     it("does not double-credit an agent sale", async () => {
+        // The shared earning ledger already holds the agent earning for this order,
+        // so a repeated settlement resolves to it and never credits again.
         const tx = makeSettleTx(
             makeOrder({ sellerId: "seller-user", sellerCanEarn: true }),
-            { existingCommission: { id: "wt-existing" } },
+            {
+                existingEarning: {
+                    id: "e-existing",
+                    idempotencyKey: "AGENT_SALE:order-1:sellerApp",
+                    status: EarningStatus.AVAILABLE,
+                },
+            },
         );
 
         await CommissionService.settleOrderCommissions(tx, "order-1");
@@ -239,6 +314,14 @@ const makeRevokeTx = (options: IRevokeOptions = {}) => {
                 id: "reversal",
                 ...args.data,
             })),
+        },
+        // Reversing a commission also freezes the matching earning-ledger rows
+        // without moving the balance a second time.
+        earningTransaction: {
+            findMany: vi.fn().mockResolvedValue([]),
+            findUnique: vi.fn().mockResolvedValue(null),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+            findUniqueOrThrow: vi.fn().mockResolvedValue({}),
         },
         appUser: {
             findUniqueOrThrow: vi.fn().mockResolvedValue({

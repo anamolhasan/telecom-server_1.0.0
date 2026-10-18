@@ -1,31 +1,31 @@
 model ReferralApplication {
-    id              String                    @id @default(uuid(7))
+  id String @id @default(uuid(7))
 
-    // One application per user is enforced by the unique index on appUserId.
-    appUserId       String                    @unique
-    appUser         AppUser                   @relation(fields: [appUserId], references: [id])
+  // One application per user is enforced by the unique index on appUserId.
+  appUserId String  @unique
+  appUser   AppUser @relation(fields: [appUserId], references: [id])
 
-    status          ReferralApplicationStatus @default(PENDING)
+  status ReferralApplicationStatus @default(PENDING)
 
-    // 📣 Applicant-provided details
-    promotionMethod ReferralPromotionMethod?
-    promotionUrl    String?
-    reason          String?                   @db.Text
+  // 📣 Applicant-provided details
+  promotionMethod ReferralPromotionMethod?
+  promotionUrl    String?
+  reason          String?                  @db.Text
 
-    // 📜 Terms acceptance
-    termsAccepted   Boolean                   @default(false)
+  // 📜 Terms acceptance
+  termsAccepted Boolean @default(false)
 
-    // Review bookkeeping
-    reviewedById    String?
-    reviewedBy      User?                     @relation("ReferralApplicationReviewer", fields: [reviewedById], references: [id])
-    reviewedAt      DateTime?
-    rejectionReason String?                   @db.Text
+  // Review bookkeeping
+  reviewedById    String?
+  reviewedBy      User?     @relation("ReferralApplicationReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  rejectionReason String?   @db.Text
 
-    appliedAt       DateTime                  @default(now())
-    createdAt       DateTime                  @default(now())
-    updatedAt       DateTime                  @updatedAt
+  appliedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    @@index([status], name: "idx_referral_application_status")
-    @@index([reviewedById], name: "idx_referral_application_reviewedById")
-    @@map("referral_applications")
+  @@index([status], name: "idx_referral_application_status")
+  @@index([reviewedById], name: "idx_referral_application_reviewedById")
+  @@map("referral_applications")
 }

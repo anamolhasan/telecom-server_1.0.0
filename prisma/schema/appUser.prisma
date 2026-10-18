@@ -1,49 +1,60 @@
 model AppUser {
-    id String @id @default(uuid(7))
+  id String @id @default(uuid(7))
 
-    // 🔗 Auth User Relation
-    authUserId String @unique
-    authUser   User   @relation(fields: [authUserId], references: [id])
+  // 🔗 Auth User Relation
+  authUserId String @unique
+  authUser   User   @relation(fields: [authUserId], references: [id])
 
-    // 👤 Extra Profile Info
-    profilePhoto  String?
-    contactNumber String?
-    address       String?
-    country       String?
+  // 👤 Extra Profile Info
+  profilePhoto  String?
+  contactNumber String?
+  address       String?
+  country       String?
 
-    // 💰 Agent / Earning System
-    // `canEarn` is the Agent badge / reseller-feature flag. It is derived from an
-    // APPROVED AgentApplication (see AgentApplication), never from the Role.
-    canEarn     Boolean @default(false)
-    balance     Float   @default(0)
-    totalEarned Float   @default(0)
+  // 💰 Agent / Earning System
+  // `canEarn` is the Agent badge / reseller-feature flag. It is derived from an
+  // APPROVED AgentApplication (see AgentApplication), never from the Role.
+  canEarn     Boolean @default(false)
+  balance     Float   @default(0)
+  totalEarned Float   @default(0)
 
-    // 🔄 Referral Income derived cache (recomputed server-side; never trusted for money decisions)
-    referralIncomeEligible Boolean @default(false)
+  // 🔄 Referral Income derived cache (recomputed server-side; never trusted for money decisions)
+  referralIncomeEligible Boolean @default(false)
 
-    // 🔗 Referral System
-    referralCode String @unique
-    referredBy   String?
-    referrer     AppUser?  @relation("Referral", fields: [referredBy], references: [id])
-    referrals    AppUser[] @relation("Referral")
+  // 🔗 Referral System
+  referralCode String    @unique
+  referredBy   String?
+  referrer     AppUser?  @relation("Referral", fields: [referredBy], references: [id])
+  referrals    AppUser[] @relation("Referral")
 
-    // 💳 Referral Income program (one application per user)
-    referralApplication ReferralApplication?
+  // 💳 Referral Income program (one application per user)
+  referralApplication ReferralApplication?
 
-    // 🤝 Agent program (one application per user)
-    agentApplication AgentApplication?
+  // 🤝 Agent program (one application per user)
+  agentApplication AgentApplication?
 
-    // 📊 Activity
-    lastLogin DateTime?
+  // 🤝 Affiliate program (one application per user)
+  affiliateApplication AffiliateApplication?
 
-    // 🗑️ Soft Delete
-    isDeleted Boolean   @default(false)
-    deletedAt DateTime?
+  // 💵 Shared earning foundation (see earning.prisma). The three programs share
+  // one ledger but keep independent rules, approval and dashboards.
+  earnings              EarningTransaction[]      @relation("EarningBeneficiary")
+  referralMilestones    ReferralMilestoneReward[] @relation("ReferralMilestone")
+  affiliateLinks        AffiliateLink[]           @relation("AffiliateLinkOwner")
+  affiliateAttributions AffiliateAttribution[]    @relation("AffiliateAttributionOwner")
+  affiliateConversions  AffiliateConversion[]     @relation("AffiliateConversionOwner")
 
-    // ⏱️ Timestamps
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  // 📊 Activity
+  lastLogin DateTime?
 
-    @@index([referredBy])
-    @@map("app_user")
+  // 🗑️ Soft Delete
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  // ⏱️ Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([referredBy])
+  @@map("app_user")
 }

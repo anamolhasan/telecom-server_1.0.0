@@ -3,6 +3,7 @@ import status from "http-status";
 import Stripe from "stripe";
 import { envVars } from "../../config/env";
 import { stripe } from "../../config/stripe.config";
+import AppError from "../../errorHelpers/AppError";
 import { catchAsync } from "../../shared/catchAsync";
 import { sendResponse } from "../../shared/sendResponse";
 import { PaymentService } from "./payment.service";
@@ -10,6 +11,10 @@ import { PaymentService } from "./payment.service";
 
 const handleStripeWebhookEvent = catchAsync(async (req: Request, res: Response) => {
     const signature = req.headers["stripe-signature"] as string;
+
+    if (!signature) {
+        throw new AppError(status.BAD_REQUEST, "Missing Stripe signature");
+    }
 
     const event = stripe.webhooks.constructEvent(
         req.body as Buffer,

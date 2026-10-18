@@ -1,0 +1,44 @@
+// Customer delivery address book.
+//
+// No structured address model existed before this file: AppUser.address is a
+// single free-text column and User has no address relation, so this is the first
+// address model rather than a duplicate of an existing one.
+//
+// Bangladesh-oriented but intentionally loose: recipient, phone, division and
+// district are required; upazila/thana, union/area, village/road and postal code
+// are optional so urban and rural addresses both fit and the shape can grow.
+//
+// "At most one default address per user" is enforced by the service layer in a
+// transaction (Prisma cannot declare a partial unique index; a raw-SQL
+// `CREATE UNIQUE INDEX ... WHERE "isDefault"` would be the DB-level alternative
+// if it is ever needed).
+//
+// ProductOrder keeps its own snapshot of these fields, so editing or deleting a
+// saved address here never alters historical orders.
+model ShippingAddress {
+  id     String @id @default(uuid(7))
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recipientName String @db.VarChar(150)
+  phone         String @db.VarChar(30)
+
+  division    String  @db.VarChar(100)
+  district    String  @db.VarChar(100)
+  upazila     String? @db.VarChar(100)
+  unionArea   String? @db.VarChar(100)
+  villageRoad String? @db.VarChar(255)
+  postalCode  String? @db.VarChar(10)
+
+  isDefault Boolean @default(false)
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId], name: "idx_shipping_address_userId")
+  @@index([isDeleted], name: "idx_shipping_address_isDeleted")
+  @@map("shipping_addresses")
+}

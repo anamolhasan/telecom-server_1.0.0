@@ -4,11 +4,72 @@ import { Prisma } from "../../../generated/prisma/client";
 import {
     OrderStatus,
     PaymentStatus,
+    WebhookEventStatus,
 } from "../../../generated/prisma/enums";
 import AppError from "../../errorHelpers/AppError";
 import { prisma } from "../../lib/prisma";
 import { CommissionService } from "../commission/commission.service";
 
+
+const STRIPE_PROVIDER = "stripe";
+
+const isUniqueConstraintError = (error: unknown): boolean =>
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === "P2002";
+
+// Stripe reports monetary amounts in the currency's minor unit (poisha for BDT),
+// while orders/payments store the major unit. Compare both sides in minor units.
+const toMinorUnits = (amount: number): number => Math.round(amount * 100);
+
+// Claim a provider event before processing it. A freshly inserted row is ours to
+// handle; a duplicate delivery of a row that is PROCESSING (another delivery in
+// flight) or PROCESSED (already handled) is skipped. Only a row a previous
+// attempt left FAILED may be retried.
+const claimWebhookEvent = async (
+    provider: string,
+    eventId: string,
+    type: string,
+): Promise<boolean> => {
+    try {
+        await prisma.webhookEvent.create({
+            data: { provider, eventId, type, status: WebhookEventStatus.PROCESSING },
+        });
+
+        return true;
+    } catch (error) {
+        if (!isUniqueConstraintError(error)) {
+            throw error;
+        }
+
+        const claimed = await prisma.webhookEvent.updateMany({
+            where: { provider, eventId, status: WebhookEventStatus.FAILED },
+            data: { status: WebhookEventStatus.PROCESSING, error: null },
+        });
+
+        return claimed.count > 0;
+    }
+};
+
+const markWebhookEventProcessed = async (provider: string, eventId: string) => {
+    await prisma.webhookEvent.updateMany({
+        where: { provider, eventId },
+        data: { status: WebhookEventStatus.PROCESSED, error: null, processedAt: new Date() },
+    });
+};
+
+const markWebhookEventFailed = async (
+    provider: string,
+    eventId: string,
+    error: unknown,
+) => {
+    const message = error instanceof Error ? error.message : String(error);
+
+    await prisma.webhookEvent.updateMany({
+        where: { provider, eventId },
+        data: { status: WebhookEventStatus.FAILED, error: message },
+    });
+};
 
 const markPaymentFailed = async (event: Stripe.Event, session: Stripe.Checkout.Session) => {
     const paymentId = session.metadata?.paymentId;
@@ -37,6 +98,12 @@ const markPaymentFailed = async (event: Stripe.Event, session: Stripe.Checkout.S
 };
 
 const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Checkout.Session) => {
+    // A completed checkout is only a settled payment once Stripe reports it paid.
+    // Delayed payment methods can complete the session while still unpaid.
+    if (session.payment_status !== "paid") {
+        return { message: "Checkout session is not paid yet; payment not confirmed" };
+    }
+
     const orderId = session.metadata?.orderId;
     const paymentId = session.metadata?.paymentId;
 
@@ -59,6 +126,31 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
 
         if (!order) {
             throw new AppError(status.NOT_FOUND, "Order not found");
+        }
+
+        // The session metadata, the payment row and the order row must all agree.
+        if (payment.orderId !== order.id || payment.userId !== order.userId) {
+            throw new AppError(
+                status.BAD_REQUEST,
+                "Stripe session is not associated with this order/payment",
+            );
+        }
+
+        const expectedMinor = toMinorUnits(order.totalAmount);
+
+        if (toMinorUnits(payment.amount) !== expectedMinor) {
+            throw new AppError(status.BAD_REQUEST, "Payment amount does not match order total");
+        }
+
+        if (session.amount_total !== expectedMinor) {
+            throw new AppError(status.BAD_REQUEST, "Stripe amount does not match order total");
+        }
+
+        if ((session.currency ?? "").toLowerCase() !== payment.currency.toLowerCase()) {
+            throw new AppError(
+                status.BAD_REQUEST,
+                "Stripe currency does not match payment currency",
+            );
         }
 
         await tx.payment.update({
@@ -90,15 +182,7 @@ const handleCheckoutCompleted = async (event: Stripe.Event, session: Stripe.Chec
     return { message: "Payment completed successfully" };
 };
 
-const handleStripeWebhookEvent = async (event: Stripe.Event) => {
-    const processedEvent = await prisma.payment.findFirst({
-        where: { stripeEventId: event.id },
-    });
-
-    if (processedEvent) {
-        return { message: "Event already processed" };
-    }
-
+const dispatchStripeEvent = async (event: Stripe.Event) => {
     switch (event.type) {
         case "checkout.session.completed": {
             const session = event.data.object as Stripe.Checkout.Session;
@@ -112,6 +196,23 @@ const handleStripeWebhookEvent = async (event: Stripe.Event) => {
         }
         default:
             return { message: `Unhandled event type: ${event.type}` };
+    }
+};
+
+const handleStripeWebhookEvent = async (event: Stripe.Event) => {
+    const claimed = await claimWebhookEvent(STRIPE_PROVIDER, event.id, event.type);
+
+    if (!claimed) {
+        return { message: "Event already processed" };
+    }
+
+    try {
+        const result = await dispatchStripeEvent(event);
+        await markWebhookEventProcessed(STRIPE_PROVIDER, event.id);
+        return result;
+    } catch (error) {
+        await markWebhookEventFailed(STRIPE_PROVIDER, event.id, error);
+        throw error;
     }
 };
 

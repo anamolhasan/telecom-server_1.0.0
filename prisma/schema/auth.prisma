@@ -1,83 +1,95 @@
 model User {
-    id    String @id
-    name  String
-    email String @unique
-    phone String? @unique
+  id    String  @id
+  name  String
+  email String  @unique
+  phone String? @unique
 
-    emailVerified Boolean @default(false)
-    phoneVerified Boolean @default(false)
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
 
-    role               Role       @default(USER)
-    status             UserStatus @default(ACTIVE)
-    needPasswordChange Boolean    @default(false)
-    image              String?
+  role               Role       @default(USER)
+  status             UserStatus @default(ACTIVE)
+  needPasswordChange Boolean    @default(false)
+  image              String?
 
-    isDeleted Boolean   @default(false)
-    deletedAt DateTime?
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    sessions Session[]
-    accounts Account[]
-    appUser  AppUser?
+  sessions Session[]
+  accounts Account[]
+  appUser  AppUser?
 
-    orders               Order[]  @relation("OrderBuyer")
-    soldOrders           Order[]  @relation("OrderSeller")
-    payments             Payment[]
-    walletTransactions   WalletTransaction[]
-    withdrawals          Withdrawal[] @relation("WithdrawalUser")
-    processedWithdrawals Withdrawal[] @relation("WithdrawalProcessedBy")
-    reviewedReferralApplications ReferralApplication[] @relation("ReferralApplicationReviewer")
-    reviewedAgentApplications   AgentApplication[]     @relation("AgentApplicationReviewer")
+  orders                        Order[]                @relation("OrderBuyer")
+  soldOrders                    Order[]                @relation("OrderSeller")
+  payments                      Payment[]
+  walletTransactions            WalletTransaction[]
+  withdrawals                   Withdrawal[]           @relation("WithdrawalUser")
+  processedWithdrawals          Withdrawal[]           @relation("WithdrawalProcessedBy")
+  reviewedReferralApplications  ReferralApplication[]  @relation("ReferralApplicationReviewer")
+  reviewedAgentApplications     AgentApplication[]     @relation("AgentApplicationReviewer")
+  reviewedAffiliateApplications AffiliateApplication[] @relation("AffiliateApplicationReviewer")
 
-    @@map("user")
+  // 🛒 E-commerce MVP back-relations (see catalog/cart/order schema files)
+  cart              Cart?
+  shippingAddresses ShippingAddress[]
+  productOrders     ProductOrder[]
+  productReviews    ProductReview[]
+
+  // 💵 Shared earning foundation back-relations (see earning.prisma)
+  earnings                      EarningTransaction[]   @relation("EarningUser")
+  affiliateAttributionCustomers AffiliateAttribution[] @relation("AffiliateAttributionCustomer")
+  createdCommissionRules        CommissionRule[]       @relation("CommissionRuleCreatedBy")
+
+  @@map("user")
 }
 
 model Session {
-    id        String   @id
-    expiresAt DateTime
-    token     String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-    ipAddress String?
-    userAgent String?
-    userId    String
-    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-    @@unique([token])
-    @@index([userId])
-    @@map("session")
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
 }
 
 model Account {
-    id                    String    @id
-    accountId             String
-    providerId            String
-    userId                String
-    user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-    accessToken           String?
-    refreshToken          String?
-    idToken               String?
-    accessTokenExpiresAt  DateTime?
-    refreshTokenExpiresAt DateTime?
-    scope                 String?
-    password              String?
-    createdAt             DateTime  @default(now())
-    updatedAt             DateTime  @updatedAt
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-    @@index([userId])
-    @@map("account")
+  @@index([userId])
+  @@map("account")
 }
 
 model Verification {
-    id         String   @id
-    identifier String
-    value      String
-    expiresAt  DateTime
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-    @@index([identifier])
-    @@map("verification")
+  @@index([identifier])
+  @@map("verification")
 }

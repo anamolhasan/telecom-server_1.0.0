@@ -1,0 +1,35 @@
+// E-commerce catalog taxonomy.
+//
+// Hierarchy: a category may reference a parent category through a named self
+// relation. `onDelete: SetNull` on the parent link means deleting a parent
+// promotes its children to top level instead of cascading the whole subtree
+// (catalog rows are soft-deleted in practice, so this is a safety net only).
+model Category {
+  id   String @id @default(uuid(7))
+  name String @db.VarChar(150)
+  slug String @unique @db.VarChar(180)
+
+  description   String? @db.Text
+  // Image reference only: the Cloudinary secure URL plus its public id, so the
+  // asset can be deleted later. Binaries never live in PostgreSQL. Mirrors the
+  // existing Operator.logo / Operator.logoPublicId convention.
+  image         String?
+  imagePublicId String?
+
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+
+  isActive  Boolean   @default(true)
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([parentId], name: "idx_category_parentId")
+  @@index([isDeleted], name: "idx_category_isDeleted")
+  @@map("categories")
+}

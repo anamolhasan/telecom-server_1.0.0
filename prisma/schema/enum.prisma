@@ -42,6 +42,14 @@ enum PaymentStatus {
   CANCELLED
 }
 
+// Lifecycle of a received provider webhook. Persisting this makes webhook
+// processing durable and idempotent so duplicate/retried deliveries are safe.
+enum WebhookEventStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 // Legacy product classification retained on OperatorOffer (see `type`). Kept for
 // backward compatibility with existing rows, orders and the operator-offer `type`
 // filter; new authoring uses the richer OperatorOfferType below.
@@ -120,6 +128,8 @@ enum WalletTransactionType {
 enum WalletTransactionReason {
   COMMISSION
   REFERRAL_INCOME
+  REFERRAL_MILESTONE
+  AFFILIATE_COMMISSION
   TOP_UP
   ORDER_PAYMENT
   WITHDRAWAL
@@ -147,6 +157,12 @@ enum AgentApplicationStatus {
   REJECTED
 }
 
+enum AffiliateApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum WithdrawalStatus {
   PENDING
   APPROVED
@@ -159,4 +175,71 @@ enum WithdrawalMethod {
   NAGAD
   ROCKET
   BANK
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E-commerce MVP enums.
+//
+// `Product` here is the e-commerce catalog product (see product.prisma), which
+// is unrelated to the legacy `ProductType` classification retained on
+// OperatorOffer. Names are prefixed to avoid colliding with the Telecom
+// `OrderStatus` / `PaymentStatus` enums above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Publication state of a catalog product. Distinct from `isActive`/soft-delete:
+// status is the editorial workflow, isDeleted is the trash.
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// Lifecycle of an e-commerce order. Intentionally not reusing the Telecom
+// `OrderStatus`, whose statuses describe operator-offer fulfilment instead.
+enum ProductOrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+// Manual courier/dispatch state for a Shipment.
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+// Moderation state of a customer product review.
+enum ProductReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E-commerce payment enums (Phase 2A: Cash on Delivery only).
+//
+// Deliberately NOT reusing the Telecom `PaymentStatus` enum above: that one
+// tracks an online provider session (PENDING/FAILED/REFUNDED/CANCELLED) bound to
+// the `Payment` model, which has a required unique `orderId` pointing at a
+// Telecom `Order`. An e-commerce COD order has no provider session and must not
+// fabricate one, so it carries its own collection state.
+//
+// `ProductPaymentMethod` starts with a single member so online methods can be
+// added later without touching COD data.
+enum ProductPaymentMethod {
+  COD
+}
+
+// Collection state of an e-commerce order's money. Separate from
+// ProductOrderStatus (fulfilment): a DELIVERED order is not automatically paid.
+enum ProductPaymentStatus {
+  UNPAID
+  PAID
 }

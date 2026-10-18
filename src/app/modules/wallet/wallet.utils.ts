@@ -17,6 +17,8 @@ interface IApplyWalletTransaction {
 const EARNING_REASONS: WalletTransactionReason[] = [
     WalletTransactionReason.COMMISSION,
     WalletTransactionReason.REFERRAL_INCOME,
+    WalletTransactionReason.REFERRAL_MILESTONE,
+    WalletTransactionReason.AFFILIATE_COMMISSION,
 ];
 
 export const applyWalletTransaction = async (
@@ -29,16 +31,43 @@ export const applyWalletTransaction = async (
         },
     });
 
-    const balanceAfter =
-        payload.type === WalletTransactionType.CREDIT
-            ? appUser.balance + payload.amount
-            : appUser.balance - payload.amount;
+    if (payload.type === WalletTransactionType.DEBIT) {
+        // The balance check and the decrement are a single conditional statement,
+        // so concurrent debits can never overdraw the wallet (no read-then-write
+        // race). A zero count means the balance was insufficient.
+        const result = await tx.appUser.updateMany({
+            where: {
+                authUserId: payload.userId,
+                balance: { gte: payload.amount },
+            },
+            data: { balance: { decrement: payload.amount } },
+        });
 
-    if (balanceAfter < 0) {
-        throw new AppError(status.BAD_REQUEST, "Insufficient wallet balance");
+        if (result.count === 0) {
+            throw new AppError(status.BAD_REQUEST, "Insufficient wallet balance");
+        }
+
+        const { balance } = await tx.appUser.findUniqueOrThrow({
+            where: { authUserId: payload.userId },
+            select: { balance: true },
+        });
+
+        return tx.walletTransaction.create({
+            data: {
+                userId: payload.userId,
+                type: payload.type,
+                reason: payload.reason,
+                amount: payload.amount,
+                balanceAfter: balance,
+                description: payload.description,
+                orderId: payload.orderId,
+                withdrawalId: payload.withdrawalId,
+            },
+        });
     }
 
     const shouldIncreaseEarned = EARNING_REASONS.includes(payload.reason);
+    const balanceAfter = appUser.balance + payload.amount;
 
     await tx.appUser.update({
         where: {

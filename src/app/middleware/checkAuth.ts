@@ -87,3 +87,74 @@ export const checkAuth =
                 next(error);
             }
         };
+
+// Best-effort authentication for public endpoints that additionally serve
+// richer data to authenticated content admins. Unlike checkAuth it never
+// rejects the request: when there is no valid session (or the lookup fails)
+// `req.user` is simply left unset and the request continues as anonymous.
+export const checkAuthOptional = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    try {
+        const sessionToken =
+            CookieUtils.getCookie(req, "better-auth.session_token") ??
+            CookieUtils.getCookie(req, "__Secure-better-auth.session_token");
+
+        if (!sessionToken) {
+            return next();
+        }
+
+        const sessionExists = await prisma.session.findFirst({
+            where: {
+                token: sessionToken,
+                expiresAt: {
+                    gt: new Date(),
+                },
+            },
+            include: {
+                user: true,
+            },
+        });
+
+        if (!sessionExists || !sessionExists.user) {
+            return next();
+        }
+
+        const user = sessionExists.user;
+
+        if (
+            user.status === UserStatus.BLOCKED ||
+            user.status === UserStatus.DELETED ||
+            user.isDeleted
+        ) {
+            return next();
+        }
+
+        const accessToken = CookieUtils.getCookie(req, "accessToken");
+
+        if (!accessToken) {
+            return next();
+        }
+
+        const verifiedToken = jwtUtils.verifyToken(
+            accessToken,
+            envVars.ACCESS_TOKEN_SECRET,
+        );
+
+        if (!verifiedToken.success) {
+            return next();
+        }
+
+        req.user = {
+            userId: user.id,
+            role: user.role,
+            email: user.email,
+        };
+    } catch {
+        // Public endpoints must stay reachable even if the auth lookup fails.
+    }
+
+    next();
+};

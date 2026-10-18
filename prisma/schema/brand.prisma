@@ -1,0 +1,24 @@
+// Optional manufacturer/brand of a catalog product. A product may exist without
+// a brand, so the relation from Product is nullable with onDelete: SetNull.
+model Brand {
+  id   String @id @default(uuid(7))
+  name String @db.VarChar(150)
+  slug String @unique @db.VarChar(180)
+
+  description  String? @db.Text
+  // Cloudinary reference pair, same convention as Operator.logo.
+  logo         String?
+  logoPublicId String?
+
+  isActive  Boolean   @default(true)
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([isDeleted], name: "idx_brand_isDeleted")
+  @@map("brands")
+}

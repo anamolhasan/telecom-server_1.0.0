@@ -1,0 +1,26 @@
+model AffiliateApplication {
+  id String @id @default(uuid(7))
+
+  // One application per user is enforced by the unique index on appUserId.
+  appUserId String  @unique
+  appUser   AppUser @relation(fields: [appUserId], references: [id])
+
+  status AffiliateApplicationStatus @default(PENDING)
+
+  // Why the user wants to become an AFFILIATE (optional, free text).
+  reason String? @db.Text
+
+  // Review bookkeeping
+  reviewedById    String?
+  reviewedBy      User?     @relation("AffiliateApplicationReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  rejectionReason String?   @db.Text
+
+  appliedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status], name: "idx_affiliate_application_status")
+  @@index([reviewedById], name: "idx_affiliate_application_reviewedById")
+  @@map("affiliate_applications")
+}

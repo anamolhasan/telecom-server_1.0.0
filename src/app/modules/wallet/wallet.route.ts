@@ -3,19 +3,19 @@ import { checkAuth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { WalletController } from "./wallet.controller";
 import { WalletValidation } from "./wallet.validation";
-import { CUSTOMER_ROLES, FINANCE_ROLES } from "../../constants/rbac.constant";
+import { FINANCE_ROLES } from "../../constants/rbac.constant";
 
 
 const router = Router();
 
 router.get(
     "/me",
-    checkAuth(...CUSTOMER_ROLES),
+    checkAuth(),
     WalletController.getMyWallet,
 );
 router.get(
     "/transactions",
-    checkAuth(...CUSTOMER_ROLES),
+    checkAuth(),
     WalletController.getMyWalletTransactions,
 );
 router.post(

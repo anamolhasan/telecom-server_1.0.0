@@ -1,7 +1,7 @@
 import { Server } from "http";
 import app from "./app";
 import { envVars } from "./app/config/env";
-import { startReferralEligibilityScheduler } from "./app/modules/referral/referral.scheduler";
+import { startReferralEligibilityScheduler } from "./app/modules/earningPrograms/referral/referral.scheduler";
 import { seedSuperAdmin } from "./app/utils/seed";
 
 let server: Server;

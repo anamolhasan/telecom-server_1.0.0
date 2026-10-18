@@ -1,9 +1,9 @@
 model SystemSetting {
-    id        String   @id @default(uuid(7))
-    key       String   @unique
-    value     String
-    updatedBy String?
-    updatedAt DateTime @updatedAt
+  id        String   @id @default(uuid(7))
+  key       String   @unique
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 
-    @@map("system_setting")
+  @@map("system_setting")
 }

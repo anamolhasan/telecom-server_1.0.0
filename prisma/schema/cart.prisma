@@ -1,0 +1,37 @@
+// Shopping cart.
+//
+// One active cart per user for the MVP: `userId` is unique, which is why there
+// is no cart-status enum yet. Introducing multiple/abandoned carts later means
+// replacing that unique index with a status column plus a partial unique index.
+model Cart {
+  id     String @id @default(uuid(7))
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items CartItem[]
+
+  @@map("carts")
+}
+
+// A cart line. `@@unique([cartId, variantId])` guarantees the same variant can
+// exist only once per cart, so the service layer can upsert the quantity instead
+// of inserting duplicates. No stock is reserved here.
+model CartItem {
+  id        String         @id @default(uuid(7))
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, variantId], name: "uniq_cart_item_cart_variant")
+  @@index([variantId], name: "idx_cart_item_variantId")
+  @@map("cart_items")
+}

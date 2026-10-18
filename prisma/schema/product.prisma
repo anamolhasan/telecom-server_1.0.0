@@ -1,0 +1,64 @@
+// E-commerce catalog product (the sellable parent of ProductVariant).
+//
+// No price is stored here on purpose: money lives on ProductVariant so a product
+// can have several priced options without duplicating or drifting price data.
+model Product {
+  id          String @id @default(uuid(7))
+  name        String @db.VarChar(200)
+  slug        String @unique @db.VarChar(220)
+  description String @db.Text
+
+  // 🗂️ Classification. A category is mandatory; Restrict blocks deleting a
+  // category that still has products. A brand is optional.
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brandId    String?
+  brand      Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+
+  // Editorial workflow: DRAFT / ACTIVE / ARCHIVED (see enum.prisma).
+  status ProductStatus @default(DRAFT)
+
+  isActive  Boolean   @default(true)
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images     ProductImage[]
+  variants   ProductVariant[]
+  reviews    ProductReview[]
+  orderItems ProductOrderItem[]
+
+  // 💵 Earning foundation back-relations (see earning.prisma)
+  commissionRules       CommissionRule[]       @relation("CommissionRuleProduct")
+  affiliateLinks        AffiliateLink[]        @relation("AffiliateLinkProduct")
+  affiliateAttributions AffiliateAttribution[] @relation("AffiliateAttributionProduct")
+  affiliateConversions  AffiliateConversion[]  @relation("AffiliateConversionProduct")
+
+  @@index([categoryId], name: "idx_product_categoryId")
+  @@index([brandId], name: "idx_product_brandId")
+  @@index([status], name: "idx_product_status")
+  @@index([isDeleted], name: "idx_product_isDeleted")
+  @@map("products")
+}
+
+// Ordered image gallery for a product. Only media references are stored
+// (Cloudinary secure URL + public id); the primary/cover image is the row with
+// the lowest `position`, so no extra flag is needed.
+model ProductImage {
+  id        String  @id @default(uuid(7))
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  url      String
+  publicId String?
+  altText  String? @db.VarChar(200)
+  position Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, position], name: "idx_product_image_productId_position")
+  @@map("product_images")
+}

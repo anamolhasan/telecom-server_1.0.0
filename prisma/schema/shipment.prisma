@@ -1,0 +1,30 @@
+// Physical dispatch of a ProductOrder.
+//
+// MVP scope: courier handling is manual. Nobody integrates Pathao/Steadfast/RedX
+// APIs here — an operator records `courierName`, `trackingNumber` and an optional
+// `trackingUrl` and keeps `status` in sync by hand.
+//
+// Recipient and delivery-address data are intentionally NOT duplicated on this
+// table: the immutable checkout snapshot on ProductOrder is the single source of
+// truth, and a one-to-many relation allows split/partial shipments later.
+model Shipment {
+  id             String       @id @default(uuid(7))
+  productOrderId String
+  productOrder   ProductOrder @relation(fields: [productOrderId], references: [id], onDelete: Cascade)
+
+  status ShipmentStatus @default(PENDING)
+
+  courierName    String? @db.VarChar(100)
+  trackingNumber String? @db.VarChar(100)
+  trackingUrl    String?
+
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productOrderId], name: "idx_shipment_productOrderId")
+  @@index([status], name: "idx_shipment_status")
+  @@map("shipments")
+}

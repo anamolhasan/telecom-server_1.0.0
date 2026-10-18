@@ -1,19 +1,20 @@
 model Operator {
-    id        String   @id @default(uuid(7))
-    name      String   @unique @db.VarChar(100)
-    code      String   @unique @db.VarChar(20)
-    logo      String?
-    isActive  Boolean  @default(true)
-    isDeleted Boolean  @default(false)
-    deletedAt DateTime?
+  id           String    @id @default(uuid(7))
+  name         String    @unique @db.VarChar(100)
+  code         String    @unique @db.VarChar(20)
+  logo         String?
+  logoPublicId String?
+  isActive     Boolean   @default(true)
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    operatorOffers OperatorOffer[]
+  operatorOffers OperatorOffer[]
 
-    @@index([isDeleted], name: "idx_operator_isDeleted")
-    @@map("operators")
+  @@index([isDeleted], name: "idx_operator_isDeleted")
+  @@map("operators")
 }
 
 // An offer published by a telecom operator. Previously named `Product`; the
@@ -21,174 +22,198 @@ model Operator {
 // `products`). OperatorOffer models operator-scoped offers only; a future
 // Global Offers feature will be separate.
 model OperatorOffer {
-    id          String              @id @default(uuid(7))
-    operatorId  String
-    operator    Operator            @relation(fields: [operatorId], references: [id])
-    // Offer title / display name.
-    name        String              @db.VarChar(150)
-    description String?             @db.Text
-    // Rich offer type used by authoring; `type` mirrors it as a ProductType for
-    // backward compatibility with the legacy product classification.
-    offerType   OperatorOfferType   @default(OTHER)
-    type        ProductType         @default(RECHARGE)
-    // Package quantity and unit (e.g. 5 GB).
-    amount      Int?
-    amountUnit  OperatorOfferAmountUnit?
-    // Validity period (e.g. 30 days).
-    validityValue Int?
-    validityUnit  OperatorOfferValidityUnit?
-    // Regular (list) price before discount, plus the effective selling price that
-    // orders use. Money is stored as Decimal.
-    regularPrice Decimal             @default(0) @db.Decimal(12, 2)
-    price        Float               @default(0)
-    // Discount configuration.
-    discountType  OperatorOfferDiscountType @default(NONE)
-    discountValue Decimal            @default(0) @db.Decimal(12, 2)
-    // Company purchase (cost) price.
-    companyPurchasePrice Decimal      @default(0) @db.Decimal(12, 2)
-    // Reseller (agent) commission configuration.
-    resellerCommissionType  OperatorOfferCommissionType @default(FIXED)
-    resellerCommissionValue Decimal         @default(0) @db.Decimal(12, 2)
-    // Buyer-agent commission configuration.
-    agentCommissionType  OperatorOfferCommissionType @default(FIXED)
-    agentCommissionValue Decimal          @default(0) @db.Decimal(12, 2)
-    // Derived percentage rates consumed by the order/commission flow.
-    commissionRate Float             @default(0)
-    referralCommissionRate Float     @default(0)
-    // Inventory.
-    inventoryMode OperatorOfferInventoryMode @default(UNLIMITED)
-    stockQuantity Int?
-    badges        OperatorOfferBadge[]       @default([])
-    // Scheduling (stored in UTC).
-    startsAt DateTime?
-    endsAt   DateTime?
-    // Administrative status.
-    status   OperatorOfferStatus @default(DRAFT)
-    isActive Boolean             @default(true)
-    isDeleted Boolean            @default(false)
-    deletedAt DateTime?
+  id                      String                      @id @default(uuid(7))
+  operatorId              String
+  operator                Operator                    @relation(fields: [operatorId], references: [id])
+  // Offer title / display name.
+  name                    String                      @db.VarChar(150)
+  description             String?                     @db.Text
+  // Rich offer type used by authoring; `type` mirrors it as a ProductType for
+  // backward compatibility with the legacy product classification.
+  offerType               OperatorOfferType           @default(OTHER)
+  type                    ProductType                 @default(RECHARGE)
+  // Package quantity and unit (e.g. 5 GB).
+  amount                  Int?
+  amountUnit              OperatorOfferAmountUnit?
+  // Validity period (e.g. 30 days).
+  validityValue           Int?
+  validityUnit            OperatorOfferValidityUnit?
+  // Regular (list) price before discount, plus the effective selling price that
+  // orders use. Money is stored as Decimal.
+  regularPrice            Decimal                     @default(0) @db.Decimal(12, 2)
+  price                   Float                       @default(0)
+  // Discount configuration.
+  discountType            OperatorOfferDiscountType   @default(NONE)
+  discountValue           Decimal                     @default(0) @db.Decimal(12, 2)
+  // Company purchase (cost) price.
+  companyPurchasePrice    Decimal                     @default(0) @db.Decimal(12, 2)
+  // Reseller (agent) commission configuration.
+  resellerCommissionType  OperatorOfferCommissionType @default(FIXED)
+  resellerCommissionValue Decimal                     @default(0) @db.Decimal(12, 2)
+  // Buyer-agent commission configuration.
+  agentCommissionType     OperatorOfferCommissionType @default(FIXED)
+  agentCommissionValue    Decimal                     @default(0) @db.Decimal(12, 2)
+  // Derived percentage rates consumed by the order/commission flow.
+  commissionRate          Float                       @default(0)
+  referralCommissionRate  Float                       @default(0)
+  // Inventory.
+  inventoryMode           OperatorOfferInventoryMode  @default(UNLIMITED)
+  stockQuantity           Int?
+  badges                  OperatorOfferBadge[]        @default([])
+  // Scheduling (stored in UTC).
+  startsAt                DateTime?
+  endsAt                  DateTime?
+  // Administrative status.
+  status                  OperatorOfferStatus         @default(DRAFT)
+  isActive                Boolean                     @default(true)
+  isDeleted               Boolean                     @default(false)
+  deletedAt               DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    orders Order[]
+  orders          Order[]
+  commissionRules CommissionRule[] @relation("CommissionRuleOffer")
 
-    @@index([operatorId], name: "idx_operatorOffer_operatorId")
-    @@index([offerType], name: "idx_operatorOffer_offerType")
-    @@index([status], name: "idx_operatorOffer_status")
-    @@index([isDeleted], name: "idx_operatorOffer_isDeleted")
-    @@map("operators_offers")
+  @@index([operatorId], name: "idx_operatorOffer_operatorId")
+  @@index([offerType], name: "idx_operatorOffer_offerType")
+  @@index([status], name: "idx_operatorOffer_status")
+  @@index([isDeleted], name: "idx_operatorOffer_isDeleted")
+  @@map("operators_offers")
 }
 
 model Order {
-    id              String        @id @default(uuid(7))
+  id String @id @default(uuid(7))
 
-    // Buyer: the account that owns/pays the order.
-    userId          String
-    user            User          @relation("OrderBuyer", fields: [userId], references: [id])
+  // Buyer: the account that owns/pays the order.
+  userId String
+  user   User   @relation("OrderBuyer", fields: [userId], references: [id])
 
-    // Seller: set only for an agent sale (userId != sellerId). Null means a
-    // personal purchase. Sales commission is paid to the seller, never to the buyer.
-    sellerId        String?
-    seller          User?         @relation("OrderSeller", fields: [sellerId], references: [id])
+  // Seller: set only for an agent sale (userId != sellerId). Null means a
+  // personal purchase. Sales commission is paid to the seller, never to the buyer.
+  sellerId String?
+  seller   User?   @relation("OrderSeller", fields: [sellerId], references: [id])
 
-    operatorOfferId String
-    operatorOffer   OperatorOffer @relation(fields: [operatorOfferId], references: [id])
-    quantity        Int           @default(1)
-    unitPrice       Float
-    totalAmount     Float
-    // Agent sales commission (percent of totalAmount from Product.commissionRate).
-    commissionAmount Float        @default(0)
-    // Referral commission for the buyer's referrer (percent of totalAmount from Product.referralCommissionRate).
-    referralCommissionAmount Float @default(0)
-    status          OrderStatus   @default(PENDING)
-    paymentStatus   PaymentStatus @default(PENDING)
-    targetNumber    String?
-    note            String?       @db.Text
+  operatorOfferId          String
+  operatorOffer            OperatorOffer @relation(fields: [operatorOfferId], references: [id])
+  quantity                 Int           @default(1)
+  unitPrice                Float
+  totalAmount              Float
+  // Agent sales commission (percent of totalAmount from Product.commissionRate).
+  commissionAmount         Float         @default(0)
+  // Referral commission for the buyer's referrer (percent of totalAmount from Product.referralCommissionRate).
+  referralCommissionAmount Float         @default(0)
+  status                   OrderStatus   @default(PENDING)
+  paymentStatus            PaymentStatus @default(PENDING)
+  targetNumber             String?
+  note                     String?       @db.Text
 
-    // Successful order-completion timestamp (null until status becomes COMPLETED)
-    completedAt     DateTime?
+  // Successful order-completion timestamp (null until status becomes COMPLETED)
+  completedAt DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    payment            Payment?
-    walletTransactions WalletTransaction[]
+  payment            Payment?
+  walletTransactions WalletTransaction[]
+  earnings           EarningTransaction[] @relation("EarningOrder")
 
-    @@index([userId], name: "idx_order_userId")
-    @@index([sellerId], name: "idx_order_sellerId")
-    @@index([operatorOfferId], name: "idx_order_operatorOfferId")
-    @@index([status], name: "idx_order_status")
-    @@index([status, completedAt], name: "idx_order_status_completedAt")
-    @@map("orders")
+  @@index([userId], name: "idx_order_userId")
+  @@index([sellerId], name: "idx_order_sellerId")
+  @@index([operatorOfferId], name: "idx_order_operatorOfferId")
+  @@index([status], name: "idx_order_status")
+  @@index([status, completedAt], name: "idx_order_status_completedAt")
+  @@map("orders")
 }
 
 model Payment {
-    id               String        @id @default(uuid(7))
-    orderId          String        @unique
-    order            Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-    userId           String
-    user             User          @relation(fields: [userId], references: [id])
-    amount           Float
-    currency         String        @default("bdt")
-    method           String        @default("stripe")
-    status           PaymentStatus @default(PENDING)
-    stripeEventId    String?       @unique
-    stripeSessionId  String?
-    transactionId    String?
-    paymentGatewayData Json?
-    paidAt           DateTime?
+  id                 String        @id @default(uuid(7))
+  orderId            String        @unique
+  order              Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User          @relation(fields: [userId], references: [id])
+  amount             Float
+  currency           String        @default("bdt")
+  method             String        @default("stripe")
+  status             PaymentStatus @default(PENDING)
+  stripeEventId      String?       @unique
+  stripeSessionId    String?
+  transactionId      String?
+  paymentGatewayData Json?
+  paidAt             DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    @@index([userId], name: "idx_payment_userId")
-    @@index([status], name: "idx_payment_status")
-    @@map("payments")
+  @@index([userId], name: "idx_payment_userId")
+  @@index([status], name: "idx_payment_status")
+  @@map("payments")
+}
+
+// Durable record of a webhook delivered by a payment provider. The unique
+// (provider, eventId) pair is the concurrency guard: only one delivery can
+// create the row, in-flight/already-processed rows are skipped, and a row left
+// FAILED by a previous attempt can be safely retried.
+model WebhookEvent {
+  id          String             @id @default(uuid(7))
+  provider    String
+  eventId     String
+  type        String
+  status      WebhookEventStatus @default(PROCESSING)
+  error       String?            @db.Text
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, eventId], name: "uniq_webhook_event_provider_eventId")
+  @@map("webhook_events")
 }
 
 model WalletTransaction {
-    id           String                  @id @default(uuid(7))
-    userId       String
-    user         User                    @relation(fields: [userId], references: [id])
-    type         WalletTransactionType
-    reason       WalletTransactionReason
-    amount       Float
-    balanceAfter Float
-    description  String?                 @db.Text
-    orderId      String?
-    order        Order?                  @relation(fields: [orderId], references: [id])
-    withdrawalId String?
-    withdrawal   Withdrawal?             @relation(fields: [withdrawalId], references: [id])
+  id           String                  @id @default(uuid(7))
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id])
+  type         WalletTransactionType
+  reason       WalletTransactionReason
+  amount       Float
+  balanceAfter Float
+  description  String?                 @db.Text
+  orderId      String?
+  order        Order?                  @relation(fields: [orderId], references: [id])
+  withdrawalId String?
+  withdrawal   Withdrawal?             @relation(fields: [withdrawalId], references: [id])
 
-    createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-    @@index([userId], name: "idx_wallet_tx_userId")
-    @@index([orderId], name: "idx_wallet_tx_orderId")
-    @@index([withdrawalId], name: "idx_wallet_tx_withdrawalId")
-    @@map("wallet_transactions")
+  earning EarningTransaction? @relation("EarningWalletTransaction")
+
+  @@index([userId], name: "idx_wallet_tx_userId")
+  @@index([orderId], name: "idx_wallet_tx_orderId")
+  @@index([withdrawalId], name: "idx_wallet_tx_withdrawalId")
+  @@map("wallet_transactions")
 }
 
 model Withdrawal {
-    id            String           @id @default(uuid(7))
-    userId        String
-    user          User             @relation("WithdrawalUser", fields: [userId], references: [id])
-    amount        Float
-    method        WithdrawalMethod
-    accountNumber String
-    accountName   String?
-    status        WithdrawalStatus @default(PENDING)
-    adminNote     String?          @db.Text
-    processedById String?
-    processedBy   User?            @relation("WithdrawalProcessedBy", fields: [processedById], references: [id])
-    processedAt   DateTime?
+  id            String           @id @default(uuid(7))
+  userId        String
+  user          User             @relation("WithdrawalUser", fields: [userId], references: [id])
+  amount        Float
+  method        WithdrawalMethod
+  accountNumber String
+  accountName   String?
+  status        WithdrawalStatus @default(PENDING)
+  adminNote     String?          @db.Text
+  processedById String?
+  processedBy   User?            @relation("WithdrawalProcessedBy", fields: [processedById], references: [id])
+  processedAt   DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    walletTransactions WalletTransaction[]
+  walletTransactions WalletTransaction[]
 
-    @@index([userId], name: "idx_withdrawal_userId")
-    @@index([status], name: "idx_withdrawal_status")
-    @@map("withdrawals")
+  @@index([userId], name: "idx_withdrawal_userId")
+  @@index([status], name: "idx_withdrawal_status")
+  @@map("withdrawals")
 }

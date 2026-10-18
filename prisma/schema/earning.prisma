@@ -1,0 +1,303 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared earning foundation for the Agent, Referral and Affiliate income
+// programs.
+//
+// Design goals (kept deliberately separate from the three programs' business
+// rules, which live in their own services):
+//   * ONE auditable, idempotent earning ledger shared by all three programs,
+//     while each program keeps its own application, approval, status, dashboard
+//     and earning history.
+//   * An earning starts PENDING and is moved into the wallet balance only once
+//     it becomes AVAILABLE, so a pending earning can never be treated as (or
+//     spent as) available money (see AppUser.balance).
+//   * Every earning freezes the commission rule that priced it (`ruleSnapshot`),
+//     so a later rule change never rewrites financial history.
+//   * Nothing is mutated or deleted: a reversal appends REVERSED status plus a
+//     compensating wallet DEBIT (WalletTransactionReason.ADJUSTMENT).
+//
+// Money is stored as Decimal(12, 2) (paisa), matching the e-commerce catalog and
+// the OperatorOffer money fields. The legacy WalletTransaction/AppUser money
+// columns are Float and are intentionally left untouched by this migration; the
+// earning ledger keeps the exact decimal value and converts only at the wallet
+// boundary.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum EarningProgram {
+  AGENT
+  REFERRAL
+  AFFILIATE
+}
+
+// PENDING   — accrued but not spendable (never part of AppUser.balance).
+// AVAILABLE — realised and moved into the wallet balance.
+// REVERSED  — cancelled/refunded; the wallet was compensated and the row frozen.
+enum EarningStatus {
+  PENDING
+  AVAILABLE
+  REVERSED
+}
+
+enum EarningRuleType {
+  FIXED
+  PERCENTAGE
+}
+
+// What a commission rule is attached to, from most specific to most general.
+enum EarningRuleScope {
+  PRODUCT
+  PRODUCT_VARIANT
+  OPERATOR_OFFER
+  GLOBAL
+}
+
+// Configurable commission rule. One row prices one program for one scope. The
+// legacy OperatorOffer commission columns stay authoritative for telecom offers;
+// a PRODUCT / PRODUCT_VARIANT / GLOBAL rule is what lets the same programs work
+// for e-commerce products and for system-wide defaults.
+model CommissionRule {
+  id String @id @default(uuid(7))
+
+  program  EarningProgram
+  scope    EarningRuleScope
+  ruleType EarningRuleType
+
+  // FIXED      -> BDT amount per unit.
+  // PERCENTAGE -> percent (0-100) of the commissionable base.
+  value Decimal @default(0) @db.Decimal(12, 2)
+
+  // Exactly one target column is set, according to `scope`. GLOBAL sets none.
+  productId        String?
+  product          Product?        @relation("CommissionRuleProduct", fields: [productId], references: [id], onDelete: SetNull)
+  productVariantId String?
+  productVariant   ProductVariant? @relation("CommissionRuleVariant", fields: [productVariantId], references: [id], onDelete: SetNull)
+  operatorOfferId  String?
+  operatorOffer    OperatorOffer?  @relation("CommissionRuleOffer", fields: [operatorOfferId], references: [id], onDelete: SetNull)
+
+  isActive Boolean @default(true)
+  priority Int     @default(0)
+
+  note String? @db.VarChar(255)
+
+  createdById String?
+  createdBy   User?   @relation("CommissionRuleCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  earnings EarningTransaction[] @relation("CommissionRuleEarnings")
+
+  @@index([program, scope, isActive], name: "idx_commission_rule_program_scope_active")
+  @@index([productId], name: "idx_commission_rule_productId")
+  @@index([productVariantId], name: "idx_commission_rule_variantId")
+  @@index([operatorOfferId], name: "idx_commission_rule_offerId")
+  @@map("commission_rules")
+}
+
+// One immutable earning event. `idempotencyKey` is the database-level guard that
+// makes repeated requests, duplicate payment webhooks and retried transactions
+// resolve to the same earning instead of crediting twice.
+model EarningTransaction {
+  id String @id @default(uuid(7))
+
+  program EarningProgram
+  status  EarningStatus  @default(PENDING)
+
+  // Beneficiary. `appUserId` is the AppUser that owns the earning; `userId` is
+  // its auth User id, which is what the wallet ledger keys on.
+  appUserId String
+  appUser   AppUser @relation("EarningBeneficiary", fields: [appUserId], references: [id])
+  userId    String
+  user      User    @relation("EarningUser", fields: [userId], references: [id])
+
+  amount   Decimal @default(0) @db.Decimal(12, 2)
+  currency String  @default("bdt")
+
+  // Which wallet ledger reason realises this earning when it becomes AVAILABLE
+  // (COMMISSION / REFERRAL_INCOME / REFERRAL_MILESTONE / AFFILIATE_COMMISSION).
+  walletReason WalletTransactionReason
+
+  // Rule snapshot: exactly what priced this earning, frozen at award time.
+  ruleType     EarningRuleType
+  ruleValue    Decimal          @default(0) @db.Decimal(12, 2)
+  ruleScope    EarningRuleScope
+  ruleRefId    String?          @db.VarChar(64)
+  ruleSnapshot Json?
+
+  // The configured rule row this earning came from (provenance). Kept nullable
+  // so deleting a rule never deletes financial history.
+  commissionRuleId String?
+  commissionRule   CommissionRule? @relation("CommissionRuleEarnings", fields: [commissionRuleId], references: [id], onDelete: SetNull)
+
+  // Commissionable base the rule was applied to (line total or order total).
+  baseAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  // Source references. Nullable and mutually exclusive in practice; a Referral
+  // milestone uses neither, an affiliate/agent sale uses one of them.
+  orderId        String?
+  order          Order?        @relation("EarningOrder", fields: [orderId], references: [id], onDelete: SetNull)
+  productOrderId String?
+  productOrder   ProductOrder? @relation("EarningProductOrder", fields: [productOrderId], references: [id], onDelete: SetNull)
+
+  // Unique per (program, source event, beneficiary). Never derived from client input.
+  idempotencyKey String @unique @db.VarChar(200)
+
+  description String? @db.Text
+
+  // The wallet ledger row that realised this earning (set on AVAILABLE).
+  walletTransactionId String?            @unique
+  walletTransaction   WalletTransaction? @relation("EarningWalletTransaction", fields: [walletTransactionId], references: [id])
+
+  availableAt DateTime?
+  reversedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  milestoneReward ReferralMilestoneReward? @relation("MilestoneEarning")
+  conversion      AffiliateConversion?     @relation("AffiliateConversionEarning")
+
+  @@index([appUserId, createdAt], name: "idx_earning_appUserId_createdAt")
+  @@index([program, status], name: "idx_earning_program_status")
+  @@index([orderId], name: "idx_earning_orderId")
+  @@index([productOrderId], name: "idx_earning_productOrderId")
+  @@map("earning_transactions")
+}
+
+// One-time Referral milestone reward. The unique `appUserId` is the database
+// guarantee that a referrer can never receive the milestone twice, however many
+// times the event fires or how many requests race.
+model ReferralMilestoneReward {
+  id String @id @default(uuid(7))
+
+  appUserId String  @unique
+  appUser   AppUser @relation("ReferralMilestone", fields: [appUserId], references: [id])
+
+  status EarningStatus @default(PENDING)
+
+  amount   Decimal @default(0) @db.Decimal(12, 2)
+  currency String  @default("bdt")
+
+  // How many active referrals triggered it, and the config that priced it.
+  qualifiedReferralCount Int
+  requiredReferralCount  Int
+  configKey              String @db.VarChar(120)
+  ruleSnapshot           Json?
+
+  earningTransactionId String?             @unique
+  earningTransaction   EarningTransaction? @relation("MilestoneEarning", fields: [earningTransactionId], references: [id], onDelete: SetNull)
+
+  awardedAt   DateTime  @default(now())
+  availableAt DateTime?
+  reversedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("referral_milestone_rewards")
+}
+
+// A permanent affiliate link owned by an approved affiliate.
+//
+// Links never expire: there is deliberately NO expiry column and no code path
+// that deactivates a link automatically. `isActive` is a manual switch only.
+model AffiliateLink {
+  id String @id @default(uuid(7))
+
+  code String @unique @db.VarChar(64)
+
+  appUserId String
+  appUser   AppUser @relation("AffiliateLinkOwner", fields: [appUserId], references: [id])
+
+  // Optional target. Null means a campaign link not bound to a single product.
+  productId String?
+  product   Product? @relation("AffiliateLinkProduct", fields: [productId], references: [id], onDelete: SetNull)
+
+  label      String? @db.VarChar(150)
+  isActive   Boolean @default(true)
+  clickCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attributions AffiliateAttribution[]
+
+  @@index([appUserId], name: "idx_affiliate_link_appUserId")
+  @@index([productId], name: "idx_affiliate_link_productId")
+  @@map("affiliate_links")
+}
+
+// Permanent, PRODUCT-SPECIFIC attribution. The unique (customerUserId, productId)
+// pair is the database guarantee that the first valid attribution is never
+// silently replaced by a later visit of the same or another affiliate link for
+// that customer+product.
+model AffiliateAttribution {
+  id String @id @default(uuid(7))
+
+  customerUserId String
+  customer       User   @relation("AffiliateAttributionCustomer", fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation("AffiliateAttributionProduct", fields: [productId], references: [id], onDelete: Cascade)
+
+  affiliateLinkId String
+  affiliateLink   AffiliateLink @relation(fields: [affiliateLinkId], references: [id], onDelete: Cascade)
+
+  affiliateAppUserId String
+  affiliateAppUser   AppUser @relation("AffiliateAttributionOwner", fields: [affiliateAppUserId], references: [id])
+
+  firstSeenAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversions AffiliateConversion[]
+
+  @@unique([customerUserId, productId], name: "uniq_affiliate_attribution_customer_product")
+  @@index([affiliateAppUserId], name: "idx_affiliate_attribution_appUserId")
+  @@index([affiliateLinkId], name: "idx_affiliate_attribution_linkId")
+  @@map("affiliate_attributions")
+}
+
+// A confirmed affiliate conversion: ONE per product per order, so an order
+// containing products attributed to different affiliates is credited correctly
+// (each product to its own permanent attribution) while a duplicate payment event
+// or retry can never create a second conversion for the same product.
+model AffiliateConversion {
+  id String @id @default(uuid(7))
+
+  affiliateAttributionId String
+  affiliateAttribution   AffiliateAttribution @relation(fields: [affiliateAttributionId], references: [id], onDelete: Cascade)
+
+  productOrderId String
+  productOrder   ProductOrder @relation("AffiliateConversionOrder", fields: [productOrderId], references: [id], onDelete: Cascade)
+
+  // The converted product. Kept explicitly (not only via the attribution) so the
+  // one-conversion-per-product-per-order guarantee is enforceable in the database.
+  productId String
+  product   Product @relation("AffiliateConversionProduct", fields: [productId], references: [id], onDelete: Cascade)
+
+  affiliateAppUserId String
+  affiliateAppUser   AppUser @relation("AffiliateConversionOwner", fields: [affiliateAppUserId], references: [id])
+
+  status EarningStatus @default(PENDING)
+
+  // Commissionable base (the order line total) and the computed commission.
+  orderAmount Decimal @default(0) @db.Decimal(12, 2)
+  amount      Decimal @default(0) @db.Decimal(12, 2)
+  currency    String  @default("bdt")
+
+  earningTransactionId String?             @unique
+  earningTransaction   EarningTransaction? @relation("AffiliateConversionEarning", fields: [earningTransactionId], references: [id], onDelete: SetNull)
+
+  convertedAt DateTime  @default(now())
+  availableAt DateTime?
+  reversedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productOrderId, productId], name: "uniq_affiliate_conversion_order_product")
+  @@index([affiliateAppUserId], name: "idx_affiliate_conversion_appUserId")
+  @@index([productId], name: "idx_affiliate_conversion_productId")
+  @@map("affiliate_conversions")
+}

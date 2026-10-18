@@ -1,0 +1,35 @@
+// Customer review of a catalog product.
+//
+// Duplicate guard: `@@unique([userId, productId])` allows exactly one review per
+// user per product, so the service layer can offer "update your review instead".
+//
+// Eligibility is deliberately NOT enforced by the schema: the future module must
+// check that the reviewer actually has a delivered ProductOrder line for this
+// product before setting `isVerifiedPurchase`. No review endpoints exist yet.
+model ProductReview {
+  id        String  @id @default(uuid(7))
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Star rating 1..5. The range is validated in the application layer (Prisma
+  // has no CHECK constraint syntax; a raw-SQL migration could add one later).
+  rating Int @db.SmallInt
+
+  title   String? @db.VarChar(200)
+  comment String? @db.Text
+
+  status             ProductReviewStatus @default(PENDING)
+  isVerifiedPurchase Boolean             @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId], name: "uniq_product_review_user_product")
+  // Product detail page: approved reviews for one product.
+  @@index([productId, status], name: "idx_product_review_productId_status")
+  // Moderation queue: oldest pending reviews first.
+  @@index([status, createdAt], name: "idx_product_review_status_createdAt")
+  @@map("product_reviews")
+}

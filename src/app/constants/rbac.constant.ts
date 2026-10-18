@@ -38,6 +38,8 @@ export const ROLE_MANAGEMENT_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
 
 export const AGENT_APPLICATION_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
 
+export const AFFILIATE_APPLICATION_ACTORS: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
+
 // Who may CREATE accounts with each role. Agent is not a creatable role: an
 // approved agent keeps Role.USER and is granted access by approving an Agent
 // Application, not by staff account creation or a role change.
