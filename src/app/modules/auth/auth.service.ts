@@ -180,7 +180,7 @@ const changePassword = async (
     // `revokeOtherSessions` invalidates every other session and issues a fresh
     // session token for this one, which we persist on the response below.
     // The raw session token is sent as a bearer token; better-auth's bearer
-    // plugin signs it internally before session lookup (RizqifyBD stores the
+    // plugin signs it internally before session lookup (Rizqiva stores the
     // raw token in its cookie/DB, so a plain cookie would fail signature checks).
     let result
     try {

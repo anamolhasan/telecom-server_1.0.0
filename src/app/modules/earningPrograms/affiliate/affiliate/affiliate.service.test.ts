@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
     AffiliateApplicationStatus,
+    EarningStatus,
     Role,
 } from "../../../../../generated/prisma/enums";
 import { AffiliateService } from "./affiliate.service";
@@ -12,9 +13,14 @@ const mocks = vi.hoisted(() => ({
     affiliateLinkCreate: vi.fn(),
     affiliateLinkUpdate: vi.fn(),
     affiliateLinkUpdateMany: vi.fn(),
+    affiliateLinkAggregate: vi.fn(),
+    affiliateLinkCount: vi.fn(),
     affiliateAttributionFindUnique: vi.fn(),
     affiliateAttributionCreate: vi.fn(),
     affiliateAttributionCount: vi.fn(),
+    affiliateAttributionGroupBy: vi.fn(),
+    affiliateConversionAggregate: vi.fn(),
+    earningTransactionGroupBy: vi.fn(),
     productFindUnique: vi.fn(),
 }));
 
@@ -27,11 +33,20 @@ vi.mock("../../../../lib/prisma", () => ({
             create: mocks.affiliateLinkCreate,
             update: mocks.affiliateLinkUpdate,
             updateMany: mocks.affiliateLinkUpdateMany,
+            aggregate: mocks.affiliateLinkAggregate,
+            count: mocks.affiliateLinkCount,
         },
         affiliateAttribution: {
             findUnique: mocks.affiliateAttributionFindUnique,
             create: mocks.affiliateAttributionCreate,
             count: mocks.affiliateAttributionCount,
+            groupBy: mocks.affiliateAttributionGroupBy,
+        },
+        affiliateConversion: {
+            aggregate: mocks.affiliateConversionAggregate,
+        },
+        earningTransaction: {
+            groupBy: mocks.earningTransactionGroupBy,
         },
         product: { findUnique: mocks.productFindUnique },
     },
@@ -287,5 +302,138 @@ describe("AffiliateService.trackVisit", () => {
 
         expect(result.reason).toBe("UNKNOWN_PRODUCT");
         expect(mocks.affiliateAttributionCreate).not.toHaveBeenCalled();
+    });
+});
+
+// The Affiliate dashboard is readable by any authenticated account and always
+// reports the caller's own state. "No application", "pending" and "rejected" are
+// ordinary 200 responses (the frontend renders a message for each), and a missing
+// account row is a clean 404 — never an unhandled 500.
+describe("AffiliateService.getAffiliateDashboard", () => {
+    const emptyAggregates = () => {
+        mocks.affiliateLinkAggregate.mockResolvedValue({
+            _count: { _all: 0 },
+            _sum: { clickCount: null },
+        });
+        mocks.affiliateLinkCount.mockResolvedValue(0);
+        mocks.affiliateAttributionGroupBy.mockResolvedValue([]);
+        mocks.affiliateConversionAggregate.mockResolvedValue({
+            _count: { _all: 0 },
+            _sum: { orderAmount: null, amount: null },
+        });
+        mocks.earningTransactionGroupBy.mockResolvedValue([]);
+    };
+
+    beforeEach(() => {
+        emptyAggregates();
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-affiliate",
+            balance: 0,
+            totalEarned: 0,
+            affiliateApplication: null,
+        });
+    });
+
+    it("reports the no-application state with zeroed figures", async () => {
+        const dashboard = await AffiliateService.getAffiliateDashboard(requestUser());
+
+        expect(dashboard.program).toBe("AFFILIATE");
+        expect(dashboard.application.status).toBeNull();
+        expect(dashboard.approved).toBe(false);
+        expect(dashboard.links).toEqual({ total: 0, active: 0, clicks: 0 });
+        expect(dashboard.earnings).toEqual({
+            pending: 0,
+            available: 0,
+            reversed: 0,
+        });
+    });
+
+    it("reports a pending application as not approved", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-affiliate",
+            balance: 0,
+            totalEarned: 0,
+            affiliateApplication: {
+                status: AffiliateApplicationStatus.PENDING,
+                appliedAt: new Date("2026-10-01"),
+                reviewedAt: null,
+                rejectionReason: null,
+            },
+        });
+
+        const dashboard = await AffiliateService.getAffiliateDashboard(requestUser());
+
+        expect(dashboard.application.status).toBe(AffiliateApplicationStatus.PENDING);
+        expect(dashboard.approved).toBe(false);
+    });
+
+    it("reports a rejected application with the reason", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-affiliate",
+            balance: 0,
+            totalEarned: 0,
+            affiliateApplication: {
+                status: AffiliateApplicationStatus.REJECTED,
+                appliedAt: new Date("2026-10-01"),
+                reviewedAt: new Date("2026-10-03"),
+                rejectionReason: "Traffic quality",
+            },
+        });
+
+        const dashboard = await AffiliateService.getAffiliateDashboard(requestUser());
+
+        expect(dashboard.application.status).toBe(AffiliateApplicationStatus.REJECTED);
+        expect(dashboard.application.rejectionReason).toBe("Traffic quality");
+        expect(dashboard.approved).toBe(false);
+    });
+
+    it("reports the approved dashboard with the caller's own figures", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-affiliate",
+            balance: 150,
+            totalEarned: 200,
+            affiliateApplication: {
+                status: AffiliateApplicationStatus.APPROVED,
+                appliedAt: new Date("2026-09-01"),
+                reviewedAt: new Date("2026-09-02"),
+                rejectionReason: null,
+            },
+        });
+        mocks.affiliateLinkAggregate.mockResolvedValue({
+            _count: { _all: 2 },
+            _sum: { clickCount: 12 },
+        });
+        mocks.affiliateLinkCount.mockResolvedValue(1);
+        mocks.affiliateAttributionGroupBy.mockResolvedValue([
+            { customerUserId: "c1" },
+            { customerUserId: "c2" },
+        ]);
+        mocks.affiliateConversionAggregate.mockResolvedValue({
+            _count: { _all: 3 },
+            _sum: { orderAmount: 900, amount: 90 },
+        });
+        mocks.earningTransactionGroupBy.mockResolvedValue([
+            { status: EarningStatus.AVAILABLE, _sum: { amount: 90 } },
+        ]);
+
+        const dashboard = await AffiliateService.getAffiliateDashboard(requestUser());
+
+        expect(dashboard.approved).toBe(true);
+        expect(dashboard.links).toEqual({ total: 2, active: 1, clicks: 12 });
+        expect(dashboard.attribution).toEqual({ customersAttributed: 2 });
+        expect(dashboard.conversions).toEqual({
+            total: 3,
+            orderAmount: 900,
+            commission: 90,
+        });
+        expect(dashboard.wallet).toEqual({ balance: 150, totalEarned: 200 });
+    });
+
+    it("fails with a clean 404 (not a 500) when the account has no app user row", async () => {
+        mocks.appUserFindUnique.mockResolvedValue(null);
+
+        await expect(
+            AffiliateService.getAffiliateDashboard(requestUser()),
+        ).rejects.toMatchObject({ statusCode: 404 });
     });
 });

@@ -153,6 +153,27 @@ describe("affiliate dashboard access", () => {
 
         expect(status).toBe(401);
     });
+
+    // Regression guard: the dashboard/overview must stay open before approval.
+    // Only the approved-only sub-resources are gated.
+    it.each([{ status: "PENDING" }, { status: "REJECTED" }])(
+        "serves the dashboard to an applicant whose application is $status",
+        async (application) => {
+            mocks.appUserFindUnique.mockResolvedValue({
+                id: "app-1",
+                affiliateApplication: application,
+                agentApplication: null,
+                referralApplication: null,
+            });
+
+            const { status } = await request("/affiliate/dashboard", {
+                role: Role.USER,
+            });
+
+            expect(status).toBe(200);
+            expect(mocks.getAffiliateDashboard).toHaveBeenCalledTimes(1);
+        },
+    );
 });
 
 describe("affiliate attribution access", () => {
@@ -280,6 +301,26 @@ describe("approved-affiliate-only access", () => {
         });
 
         expect(status).toBe(403);
+        expect(mocks.getMyEarnings).not.toHaveBeenCalled();
+    });
+
+    // The rejected sub-resource request must be a clear, expected 403 (never a
+    // 500) so the dashboard can treat it as an application-state message.
+    it("answers an unapproved earnings request with a clear 403", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-1",
+            affiliateApplication: { status: "PENDING" },
+            agentApplication: null,
+            referralApplication: null,
+        });
+
+        const { status, body } = await request("/affiliate/earnings", {
+            role: Role.USER,
+        });
+
+        expect(status).toBe(403);
+        expect(body.success).toBe(false);
+        expect(body.message).toContain("approved affiliate application");
         expect(mocks.getMyEarnings).not.toHaveBeenCalled();
     });
 

@@ -1,6 +1,6 @@
-# RizqifyBD Server
+# Rizqiva Server
 
-RizqifyBD is a telecom offer marketplace in Bangladesh. Users buy recharge/offer bundles through the platform, and a referral + agent-commission system rewards users who bring in business. This repository is the REST API backend.
+Rizqiva is a telecom offer marketplace in Bangladesh. Users buy recharge/offer bundles through the platform, and a referral + agent-commission system rewards users who bring in business. This repository is the REST API backend.
 
 ## Tech Stack
 

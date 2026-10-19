@@ -35,7 +35,7 @@ vi.mock("../lib/auth", () => ({ auth: mocks.authMock }));
 vi.mock("../lib/prisma", () => ({ prisma: mocks.prisma }));
 
 const signUpEmailMock = mocks.authMock.api.signUpEmail;
-const validConfig = { name: "Rizqify Super Admin", email: "superadmin@x.com", password: "super-secret" };
+const validConfig = { name: "Rizqiva Super Admin", email: "superadmin@x.com", password: "super-secret" };
 
 afterEach(() => {
     vi.clearAllMocks();

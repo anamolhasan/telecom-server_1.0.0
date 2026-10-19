@@ -15,7 +15,7 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
         requireEmailVerification: false,
-        // Align better-auth's enforced minimum with RizqifyBD's declared policy
+        // Align better-auth's enforced minimum with Rizqiva's declared policy
         // (zod `min(6)` in auth.validation.ts / user.validation.ts and the
         // change-password UI). Without this, better-auth defaults to 8 and
         // rejects otherwise-valid 6-7 character passwords.
@@ -71,7 +71,7 @@ export const auth = betterAuth({
     },
     // Allows server-side better-auth API calls (e.g. auth.api.changePassword) to
     // authenticate with the raw session token via `Authorization: Bearer <token>`.
-    // The plugin signs the token internally before session lookup, so RizqifyBD
+    // The plugin signs the token internally before session lookup, so Rizqiva
     // keeps its existing raw-token cookie/DB model untouched.
     plugins: [
         bearer(),

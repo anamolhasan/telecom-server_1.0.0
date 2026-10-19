@@ -144,6 +144,29 @@ describe("getAgentDashboard", () => {
         expect(dashboard.approved).toBe(false);
     });
 
+    it("reports a rejected application with the reason and keeps the figures at zero", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-1",
+            canEarn: false,
+            balance: 0,
+            totalEarned: 0,
+            agentApplication: {
+                status: AgentApplicationStatus.REJECTED,
+                appliedAt: new Date("2026-10-01"),
+                reviewedAt: new Date("2026-10-03"),
+                rejectionReason: "Incomplete details",
+            },
+        });
+
+        const dashboard = await AgentService.getAgentDashboard(requestUser as never);
+
+        expect(dashboard.application.status).toBe(AgentApplicationStatus.REJECTED);
+        expect(dashboard.application.rejectionReason).toBe("Incomplete details");
+        expect(dashboard.approved).toBe(false);
+        expect(dashboard.canEarn).toBe(false);
+        expect(dashboard.sales.completedOrders).toBe(0);
+    });
+
     it("fails when the account has no app user row", async () => {
         mocks.appUserFindUnique.mockResolvedValue(null);
 

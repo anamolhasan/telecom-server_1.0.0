@@ -57,7 +57,7 @@ describe("applyForReferralIncome (one-time application)", () => {
             {
                 promotionMethod: ReferralPromotionMethod.SOCIAL_MEDIA,
                 promotionUrl: "https://example.com/promo",
-                reason: "I will promote RizqifyBD on my social channels.",
+                reason: "I will promote Rizqiva on my social channels.",
                 termsAccepted: true,
             },
             client,
@@ -69,7 +69,7 @@ describe("applyForReferralIncome (one-time application)", () => {
                 status: ReferralApplicationStatus.PENDING,
                 promotionMethod: ReferralPromotionMethod.SOCIAL_MEDIA,
                 promotionUrl: "https://example.com/promo",
-                reason: "I will promote RizqifyBD on my social channels.",
+                reason: "I will promote Rizqiva on my social channels.",
                 termsAccepted: true,
             },
         });

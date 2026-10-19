@@ -227,18 +227,25 @@ describe("programme participation: GET /referral/partner", () => {
         },
     );
 
-    it("does not consult the application status to serve the dashboard", async () => {
-        // An unapproved (PENDING) applicant must be able to see their own referral
-        // code, their own referred accounts and where their application stands.
-        setApplicationStatus(ReferralApplicationStatus.PENDING);
+    it.each([
+        ReferralApplicationStatus.PENDING,
+        ReferralApplicationStatus.REJECTED,
+    ])(
+        "does not consult the application status to serve the dashboard (%s)",
+        async (applicationStatus) => {
+            // An unapproved (PENDING) or rejected applicant must be able to see
+            // their own referral code, referred accounts and where the
+            // application stands.
+            setApplicationStatus(applicationStatus);
 
-        const { status } = await request("GET", "/referral/partner", {
-            role: Role.USER,
-        });
+            const { status } = await request("GET", "/referral/partner", {
+                role: Role.USER,
+            });
 
-        expect(status).toBe(200);
-        expect(mocks.getPartnerReferralDashboard).toHaveBeenCalledTimes(1);
-    });
+            expect(status).toBe(200);
+            expect(mocks.getPartnerReferralDashboard).toHaveBeenCalledTimes(1);
+        },
+    );
 });
 
 describe("reward eligibility: GET /referral/earnings", () => {
@@ -255,6 +262,21 @@ describe("reward eligibility: GET /referral/earnings", () => {
         });
 
         expect(status).toBe(403);
+        expect(mocks.getMyEarnings).not.toHaveBeenCalled();
+    });
+
+    // The rejected sub-resource request must be a clear, expected 403 (never a
+    // 500) so the dashboard can treat it as an application-state message.
+    it("answers an unapproved earnings request with a clear 403", async () => {
+        setApplicationStatus(ReferralApplicationStatus.PENDING);
+
+        const { status, body } = await request("GET", "/referral/earnings", {
+            role: Role.USER,
+        });
+
+        expect(status).toBe(403);
+        expect(body.success).toBe(false);
+        expect(body.message).toContain("approved referral application");
         expect(mocks.getMyEarnings).not.toHaveBeenCalled();
     });
 

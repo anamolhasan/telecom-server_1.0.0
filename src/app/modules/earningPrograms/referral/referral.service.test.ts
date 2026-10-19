@@ -196,6 +196,26 @@ describe("getPartnerReferralDashboard", () => {
         // (derived by getReferralStatus / grantReferralIncome) can do that.
         expect(result.referralIncomeEligible).toBe(false);
     });
+
+    it("serves a rejected applicant the dashboard (never an error) and grants nothing", async () => {
+        const client = buildClient(ReferralApplicationStatus.REJECTED, [], []);
+
+        const result = await ReferralService.getPartnerReferralDashboard(request, client);
+
+        expect(result.applicationStatus).toBe(ReferralApplicationStatus.REJECTED);
+        expect(result.referralIncomeEligible).toBe(false);
+    });
+
+    it("fails with a clean 404 (not a 500) when the account has no app user row", async () => {
+        const client = {
+            appUser: { findUnique: vi.fn().mockResolvedValue(null) },
+            order: { groupBy: vi.fn() },
+        } as unknown as Prisma.TransactionClient;
+
+        await expect(
+            ReferralService.getPartnerReferralDashboard(request, client),
+        ).rejects.toMatchObject({ statusCode: 404 });
+    });
 });
 
 describe("getDefaultReferralCode", () => {

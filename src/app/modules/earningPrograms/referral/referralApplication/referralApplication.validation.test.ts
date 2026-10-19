@@ -5,7 +5,7 @@ import { submitReferralApplicationZodSchema } from "./referralApplication.valida
 const validPayload = {
     promotionMethod: ReferralPromotionMethod.SOCIAL_MEDIA,
     promotionUrl: "https://example.com/promo",
-    reason: "I will promote RizqifyBD on my social channels.",
+    reason: "I will promote Rizqiva on my social channels.",
     termsAccepted: true,
 };
 

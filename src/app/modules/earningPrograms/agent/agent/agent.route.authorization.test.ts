@@ -128,6 +128,25 @@ describe("agent dashboard access", () => {
         expect(status).toBe(401);
         expect(mocks.getAgentDashboard).not.toHaveBeenCalled();
     });
+
+    // Regression guard: the dashboard/overview must stay open before approval.
+    // Only the approved-only sub-resources (sales/earnings) are gated.
+    it.each([{ status: "PENDING" }, { status: "REJECTED" }])(
+        "serves the dashboard to an applicant whose application is $status",
+        async (application) => {
+            mocks.appUserFindUnique.mockResolvedValue({
+                id: "app-1",
+                agentApplication: application,
+                affiliateApplication: null,
+                referralApplication: null,
+            });
+
+            const { status } = await request("/agent/dashboard", Role.USER);
+
+            expect(status).toBe(200);
+            expect(mocks.getAgentDashboard).toHaveBeenCalledTimes(1);
+        },
+    );
 });
 
 describe("approved-agent-only access", () => {
@@ -185,6 +204,24 @@ describe("approved-agent-only access", () => {
         const { status } = await request("/agent/sales", Role.ADMIN);
 
         expect(status).toBe(403);
+        expect(mocks.getMySales).not.toHaveBeenCalled();
+    });
+
+    // The rejected sub-resource request must be a clear, expected 403 (never a
+    // 500) so the dashboard can treat it as an application-state message.
+    it("answers an unapproved sales request with a clear 403", async () => {
+        mocks.appUserFindUnique.mockResolvedValue({
+            id: "app-1",
+            agentApplication: { status: "PENDING" },
+            affiliateApplication: null,
+            referralApplication: null,
+        });
+
+        const { status, body } = await request("/agent/sales", Role.USER);
+
+        expect(status).toBe(403);
+        expect(body.success).toBe(false);
+        expect(body.message).toContain("approved agent application");
         expect(mocks.getMySales).not.toHaveBeenCalled();
     });
 
